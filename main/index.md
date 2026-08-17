@@ -1,27 +1,28 @@
-# Androiddesktop 入口索引
+# Androiddesktop Index
 
-## 工程入口
+## 关键路径
 
-- Android Manifest：`app/src/main/AndroidManifest.xml`
-- 主界面：`app/src/main/java/io/github/androiddesktop/MainActivity.kt`
-- UI 动画工具：`app/src/main/java/io/github/androiddesktop/UiMotion.kt`
-- 窗口预览动画：`app/src/main/java/io/github/androiddesktop/WindowPreviewView.kt`
-- 桌面模式探测：`app/src/main/java/io/github/androiddesktop/DesktopModeController.kt`
-- 多窗口启动：`app/src/main/java/io/github/androiddesktop/MultiWindowLauncher.kt`
-- ADB 权限诊断：`app/src/main/java/io/github/androiddesktop/AdbPermissionDiagnostics.kt`
-- 华为画面测试计划：`app/src/main/java/io/github/androiddesktop/HuaweiVisualProbe.kt`
+- 工程根目录：`D:\vibecoding\project\Androiddesktop`
+- Release APK：`D:\vibecoding\release\Androiddesktop\release\Androiddesktop-release.apk`
+- Debug APK：`D:\vibecoding\release\Androiddesktop\debug\Androiddesktop-debug.apk`
+- APK 静态分析输出：`resource\analysis\`
 
-## 脚本入口
+## 当前产品定位
 
-- APK 静态分析：`command/Analyze-Apk.ps1`
-- Debug 构建：`command/Build-Debug.ps1`
-- Release 构建与签名：`command/Build-Release.ps1`
-- 复制产物：`command/Copy-Release.ps1`
-- 全量验证：`command/Verify-Project.ps1`
+Androiddesktop 是一个 clean-room Android 桌面容器原型。目标不是只把外部应用启动到系统自由窗，而是在本 App 内构建类 Windows 桌面：Material 3 风格桌面层、可拖动窗口、Dock、启动台、无线调试/特权核心状态与命令规划。真实嵌入其他 App 画面需要特权核心创建/管理 display session，并转发输入。
 
-## 数据与产物
+## 入口文件
 
-- 已授权 APK：`resource/apk/VoyageOS_demo.apk`
-- 静态分析输出：`resource/analysis/`
-- Debug 产物：`D:\vibecoding\release\Androiddesktop\debug\Androiddesktop-debug.apk`
-- Release 产物：`D:\vibecoding\release\Androiddesktop\release\Androiddesktop-release.apk`
+- `app/src/main/java/io/github/androiddesktop/MainActivity.kt`：Material 3 风格桌面容器 UI、Dock、启动台、可拖动窗口。
+- `app/src/main/java/io/github/androiddesktop/Material3Tokens.kt`：Material 3 风格颜色、surface、ripple token。
+- `app/src/main/java/io/github/androiddesktop/DesktopContainerModels.kt`：桌面 App、窗口、特权核心状态模型。
+- `app/src/main/java/io/github/androiddesktop/ContainerCorePlanner.kt`：无线调试/特权核心/虚拟显示架构说明与命令规划。
+- `app/src/main/java/io/github/androiddesktop/DesktopModeController.kt`：设备显示、输入、freeform 状态探测。
+- `app/src/main/java/io/github/androiddesktop/PrivilegedCommandPlanner.kt`：ADB windowingMode/bounds 级命令规划。
+
+## 构建脚本
+
+- `command/Build-Release.ps1`：构建、zipalign、签名、验证 release APK。
+- `command/Build-Debug.ps1`：构建 debug APK。
+- `command/Verify-Project.ps1`：分析原 APK 并验证当前 release APK。
+- `command/Analyze-Apk.ps1`：授权 APK 的 Manifest/权限/字符串证据分析。

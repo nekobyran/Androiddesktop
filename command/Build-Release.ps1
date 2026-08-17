@@ -41,7 +41,9 @@ $ksPass = $env:ANDROIDDESKTOP_KEYSTORE_PASS
 $keyPass = $env:ANDROIDDESKTOP_KEY_PASS
 $tempDir = $null
 if ([string]::IsNullOrWhiteSpace($ks) -or [string]::IsNullOrWhiteSpace($ksAlias) -or [string]::IsNullOrWhiteSpace($ksPass)) {
-    $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ('androiddesktop-sign-' + [guid]::NewGuid().ToString('N'))
+    $tempRoot = 'D:\vibecoding\sdk\cache\temp'
+    New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
+    $tempDir = Join-Path $tempRoot ('androiddesktop-sign-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
     $ks = Join-Path $tempDir 'androiddesktop-release.jks'
     $ksAlias = 'androiddesktop-release'

@@ -1,7 +1,10 @@
 # Androiddesktop 长期约束
 
-- 本工程采用 clean-room 实现：只使用 APK 元数据、Manifest、权限、公开 API 行为和用户授权测试结论，不复制、反编译复刻或移植私有源码。
-- 不泄露下载 URL、签名、AccessKey、Token、Cookie 或设备敏感信息。
-- 默认 PowerShell 7、UTF-8；SDK/JDK 使用 `D:\vibecoding\sdk`，不得把构建环境放到 C 盘。
-- Android 多窗口能力只通过公开 SDK、显式用户操作和 ADB 授权诊断实现，不使用破坏性隐藏 API 绕过 ROM 策略。
-- 华为真机测试必须记录 ADB 授权状态、显示状态和实际画面表现；不得伪造通过。
+- Clean-room only: 不复制、反编译移植、复用或提交授权 APK 的私有源码/资源/DEX 深度内容。
+- 不暴露授权 APK 下载 URL、签名参数、token、keystore、密码或任何凭据。
+- 本项目真实产品定位是“App 内桌面容器”，不是普通多窗口启动器。
+- UI 方向必须优先 Material 3 风格：surface、圆角、状态 chip、dock、启动台、桌面窗口、动效反馈。
+- 其他应用真实画面嵌入不得伪装已完成；只有在实现无线调试/Shizuku/root/系统签名特权核心、display session、Surface 绑定和输入转发后，才能标记为真实嵌入。
+- 当前 release APK 可包含占位 Surface/VirtualDisplay 插槽、命令规划和架构说明，但必须在 UI/README 中标明特权核心边界。
+- 构建使用 `D:\vibecoding\sdk`，产物输出到 `D:\vibecoding\release\Androiddesktop\<debug|release>`。
+- Git 提交不得包含 `resource/apk/*.apk`、`*.jks`、`*.keystore`、深度 DEX 字符串、构建缓存或 release APK。
