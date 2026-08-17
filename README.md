@@ -21,16 +21,28 @@ Androiddesktop 是一个 clean-room Kotlin 示例工程，用于复现“Android
 
 ## 构建
 
+Debug 构建：
+
 ```powershell
 cd D:\vibecoding\project\Androiddesktop
 .\command\Build-Debug.ps1
 ```
 
-产物复制到：
+Release 构建与签名：
+
+```powershell
+cd D:\vibecoding\project\Androiddesktop
+.\command\Build-Release.ps1
+```
+
+产物路径：
 
 ```text
 D:\vibecoding\release\Androiddesktop\debug\Androiddesktop-debug.apk
+D:\vibecoding\release\Androiddesktop\release\Androiddesktop-release.apk
 ```
+
+`Build-Release.ps1` 默认使用临时本地签名密钥生成可安装 release APK，并在签名后删除临时密钥。生产签名可通过 `ANDROIDDESKTOP_KEYSTORE`、`ANDROIDDESKTOP_KEY_ALIAS`、`ANDROIDDESKTOP_KEYSTORE_PASS`、`ANDROIDDESKTOP_KEY_PASS` 环境变量传入；不要把 keystore 或密码提交进源码。
 
 全量验证：
 
@@ -59,7 +71,7 @@ cd D:\vibecoding\project\Androiddesktop
 
 1. 手机开启开发者选项和 USB debugging。
 2. 使用 USB 连接电脑，执行 `adb devices`，确认设备已授权。
-3. 安装 `Androiddesktop-debug.apk`。
+3. 安装 `Androiddesktop-release.apk`。
 4. 打开应用，点击“复制 ADB 命令”，在电脑 PowerShell 中执行。
 5. 连接外接屏、扩展坞、无线投屏或华为桌面模式入口。
 6. 在目标包名中输入需要多窗口化的应用，例如 `com.android.settings`。

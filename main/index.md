@@ -13,6 +13,7 @@
 
 - APK 静态分析：`command/Analyze-Apk.ps1`
 - Debug 构建：`command/Build-Debug.ps1`
+- Release 构建与签名：`command/Build-Release.ps1`
 - 复制产物：`command/Copy-Release.ps1`
 - 全量验证：`command/Verify-Project.ps1`
 
@@ -21,3 +22,4 @@
 - 已授权 APK：`resource/apk/VoyageOS_demo.apk`
 - 静态分析输出：`resource/analysis/`
 - Debug 产物：`D:\vibecoding\release\Androiddesktop\debug\Androiddesktop-debug.apk`
+- Release 产物：`D:\vibecoding\release\Androiddesktop\release\Androiddesktop-release.apk`
