@@ -4,6 +4,8 @@
 
 - Android Manifest：`app/src/main/AndroidManifest.xml`
 - 主界面：`app/src/main/java/io/github/androiddesktop/MainActivity.kt`
+- UI 动画工具：`app/src/main/java/io/github/androiddesktop/UiMotion.kt`
+- 窗口预览动画：`app/src/main/java/io/github/androiddesktop/WindowPreviewView.kt`
 - 桌面模式探测：`app/src/main/java/io/github/androiddesktop/DesktopModeController.kt`
 - 多窗口启动：`app/src/main/java/io/github/androiddesktop/MultiWindowLauncher.kt`
 - ADB 权限诊断：`app/src/main/java/io/github/androiddesktop/AdbPermissionDiagnostics.kt`

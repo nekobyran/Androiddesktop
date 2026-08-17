@@ -14,6 +14,8 @@ Androiddesktop 是一个 clean-room Kotlin 示例工程，用于复现“Android
 | 文件 | 作用 |
 |---|---|
 | `MainActivity.kt` | 纯 Android View UI，展示状态、权限、ADB 命令、华为测试计划，并触发多窗口启动。 |
+| `UiMotion.kt` | 统一启动入场、按钮按压、报告切换、脉冲反馈等轻量 View 动画。 |
+| `WindowPreviewView.kt` | 自绘桌面窗口预览，提供外屏/freeform 状态感知和 launch pulse 动画。 |
 | `DesktopModeController.kt` | 探测外接显示、输入设备、freeform 特性、Huawei/Honor ROM 特征和 global settings。 |
 | `MultiWindowLauncher.kt` | 用公开 `Intent` flags + `ActivityOptions.launchBounds` 发起多窗口/指定边界启动请求。 |
 | `AdbPermissionDiagnostics.kt` | 检测悬浮窗、使用情况访问、`WRITE_SECURE_SETTINGS`，生成 ADB 授权命令。 |
