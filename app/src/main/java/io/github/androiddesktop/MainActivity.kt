@@ -50,32 +50,22 @@ class MainActivity : Activity() {
     }
 
     private fun buildDesktopShell(): View {
-        val root = FrameLayout(this).apply {
-            setBackgroundColor(Material3Tokens.Background)
-        }
-
+        val root = FrameLayout(this).apply { setBackgroundColor(Material3Tokens.Background) }
         val main = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(12))
         }
-        root.addView(main, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        ))
-
+        root.addView(main, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         main.addView(buildTopBar())
-
         desktopLayer = FrameLayout(this).apply {
             background = Material3Tokens.surface(Material3Tokens.Surface, dp(28), Color.argb(50, 255, 255, 255), 1)
             clipToPadding = false
             setPadding(dp(12), dp(12), dp(12), dp(12))
         }
-        main.addView(desktopLayer, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            0,
-            1f
-        ).apply { topMargin = dp(12); bottomMargin = dp(10) })
-
+        main.addView(desktopLayer, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f).apply {
+            topMargin = dp(12)
+            bottomMargin = dp(10)
+        })
         main.addView(buildDock())
         launcherPanel = buildLauncherPanel()
         root.addView(launcherPanel)
@@ -87,15 +77,13 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-
         val titleBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         titleBlock.addView(text("Androiddesktop", 24f, bold = true, color = Material3Tokens.OnSurface))
-        titleBlock.addView(text("Material 3 桌面容器 · Dock · 启动台 · 特权核心接口", 12f, color = Material3Tokens.OnSurfaceVariant))
+        titleBlock.addView(text("Material 3 桌面容器 · Dock · 启动台 · 特权核心契约", 12f, color = Material3Tokens.OnSurfaceVariant))
         bar.addView(titleBlock, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-
         bar.addView(chip("无线调试"))
-        bar.addView(chip("特权核心"))
-        bar.addView(chip("虚拟显示"))
+        bar.addView(chip("Core contract"))
+        bar.addView(chip("Surface slot"))
         return bar
     }
 
@@ -110,10 +98,10 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         scroll.addView(row)
-
         row.addView(dockButton("启动台", "◉") { toggleLauncher() })
         row.addView(dockButton("核心", "◆") { updateConsole(corePlanner.principle()) })
-        row.addView(dockButton("命令", "⌁") { copyCoreCommands() })
+        row.addView(dockButton("会话", "▤") { showCoreSessionContract() })
+        row.addView(dockButton("脚本", "⌁") { copyCoreCommands() })
         apps.take(5).forEach { app ->
             row.addView(dockButton(app.label, app.glyph) { addWindow(app, DisplayMode.PlaceholderSurface, "${app.label} 的真实画面需要由特权核心启动到可承载 display。") })
         }
@@ -129,12 +117,10 @@ class MainActivity : Activity() {
             setPadding(dp(18), dp(18), dp(18), dp(18))
             elevation = 18f
         }
-        val params = FrameLayout.LayoutParams(dp(360), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.START).apply {
+        panel.layoutParams = FrameLayout.LayoutParams(dp(360), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.START).apply {
             leftMargin = dp(20)
             bottomMargin = dp(92)
         }
-        panel.layoutParams = params
-
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -142,7 +128,6 @@ class MainActivity : Activity() {
         header.addView(text("启动台", 20f, bold = true, color = Material3Tokens.OnSurface), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(smallButton("关闭") { toggleLauncher(false) })
         panel.addView(header)
-
         packageInput = EditText(this).apply {
             hint = "输入目标包名，例如 com.android.settings"
             setSingleLine(true)
@@ -159,23 +144,14 @@ class MainActivity : Activity() {
                 } else false
             }
         }
-        panel.addView(packageInput, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(14); bottomMargin = dp(12) })
-
-        val grid = GridLayout(this).apply {
-            columnCount = 3
-            rowCount = 2
-        }
-        apps.forEach { app ->
-            grid.addView(launcherTile(app), ViewGroup.LayoutParams(dp(104), dp(96)))
-        }
+        panel.addView(packageInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(14)
+            bottomMargin = dp(12)
+        })
+        val grid = GridLayout(this).apply { columnCount = 3; rowCount = 2 }
+        apps.forEach { app -> grid.addView(launcherTile(app), ViewGroup.LayoutParams(dp(104), dp(96))) }
         panel.addView(grid)
-        panel.addView(smallButton("复制无线调试/核心命令") { copyCoreCommands() }, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(12) })
+        panel.addView(smallButton("复制无线调试/核心脚本") { copyCoreCommands() }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) })
         return panel
     }
 
@@ -196,7 +172,7 @@ class MainActivity : Activity() {
         view.translationY = 18f
         view.alpha = 0f
         view.animate().alpha(1f).translationY(0f).setDuration(220).start()
-        updateConsole("已创建容器窗口: ${app.label}\n包名: ${app.packageName.ifEmpty { packageInput.text }}\n$note")
+        updateConsole(corePlanner.sessionBlueprint(app.packageName.ifEmpty { packageInput.text.toString() }, bounds))
     }
 
     private fun buildWindowView(window: DesktopWindow): View {
@@ -209,7 +185,6 @@ class MainActivity : Activity() {
             leftMargin = window.bounds.left
             topMargin = window.bounds.top
         }
-
         val title = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -221,26 +196,24 @@ class MainActivity : Activity() {
         title.addView(windowAction("×") { desktopLayer.removeView(card) })
         makeDraggable(card, title)
         card.addView(title)
-
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding(dp(14), dp(12), dp(14), dp(12))
         }
         body.addView(text(window.app.glyph, 42f, bold = true, color = Material3Tokens.Primary))
-        body.addView(text("${window.app.packageName.ifEmpty { "custom package" }}", 13f, color = Material3Tokens.OnSurface))
+        body.addView(text(window.app.packageName.ifEmpty { "custom package" }, 13f, color = Material3Tokens.OnSurface))
         body.addView(text("SurfaceView / VirtualDisplay 插槽", 12f, color = Material3Tokens.OnSurfaceVariant))
         body.addView(text("当前是 Material 3 容器占位。真实 App 画面需由无线调试/特权核心创建 display session 并转发输入。", 12f, color = Material3Tokens.Warning).apply { gravity = Gravity.CENTER })
-        body.addView(smallButton("复制该窗口核心命令") {
-            val commands = corePlanner.wirelessDebugCommands(window.app.packageName.ifEmpty { packageInput.text.toString() }, window.bounds).joinToString("\n")
-            copyText("Androiddesktop core commands", commands)
-            updateConsole(commands)
+        body.addView(smallButton("查看 session contract") {
+            updateConsole(corePlanner.sessionBlueprint(window.app.packageName.ifEmpty { packageInput.text.toString() }, window.bounds))
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) })
-        card.addView(body, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            0,
-            1f
-        ))
+        body.addView(smallButton("复制该窗口核心脚本") {
+            val commands = corePlanner.coreLaunchScript(window.app.packageName.ifEmpty { packageInput.text.toString() }, window.bounds)
+            copyText("Androiddesktop core bootstrap", commands)
+            updateConsole(commands)
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
+        card.addView(body, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         return card
     }
 
@@ -277,24 +250,25 @@ class MainActivity : Activity() {
             launcherPanel.translationY = dp(20).toFloat()
             launcherPanel.animate().alpha(1f).translationY(0f).setDuration(180).start()
         } else {
-            launcherPanel.animate().alpha(0f).translationY(dp(20).toFloat()).setDuration(140).withEndAction {
-                launcherPanel.visibility = View.GONE
-            }.start()
+            launcherPanel.animate().alpha(0f).translationY(dp(20).toFloat()).setDuration(140).withEndAction { launcherPanel.visibility = View.GONE }.start()
         }
+    }
+
+    private fun showCoreSessionContract() {
+        val targetPackage = if (::packageInput.isInitialized) packageInput.text.toString() else "com.android.settings"
+        updateConsole(corePlanner.sessionBlueprint(targetPackage, Rect(dp(80), dp(80), dp(920), dp(720))))
     }
 
     private fun copyCoreCommands() {
         val targetPackage = if (::packageInput.isInitialized) packageInput.text.toString() else "com.android.settings"
-        val commands = corePlanner.wirelessDebugCommands(targetPackage, Rect(dp(80), dp(80), dp(920), dp(720))).joinToString("\n")
-        copyText("Androiddesktop privileged core commands", commands)
+        val commands = corePlanner.coreLaunchScript(targetPackage, Rect(dp(80), dp(80), dp(920), dp(720)))
+        copyText("Androiddesktop privileged core bootstrap", commands)
         updateConsole(commands)
-        Toast.makeText(this, "无线调试/核心命令已复制", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "无线调试/核心脚本已复制", Toast.LENGTH_SHORT).show()
     }
 
-    private fun updateConsole(text: String) {
-        if (!::console.isInitialized) {
-            console = TextView(this)
-        }
+    private fun updateConsole(value: String) {
+        if (!::console.isInitialized) console = TextView(this)
         if (console.parent == null) {
             val scroll = ScrollView(this).apply {
                 background = Material3Tokens.surface(Material3Tokens.SurfaceContainerHigh, dp(18), Color.argb(50, 255, 255, 255), 1)
@@ -309,7 +283,7 @@ class MainActivity : Activity() {
         console.setTextColor(Material3Tokens.OnSurfaceVariant)
         console.textSize = 11f
         console.setTextIsSelectable(true)
-        console.text = text
+        console.text = value
         console.alpha = 0.25f
         console.animate().alpha(1f).setDuration(160).start()
     }
@@ -358,9 +332,7 @@ class MainActivity : Activity() {
         setOnClickListener { onClick() }
     }
 
-    private fun smallButton(label: String, onClick: () -> Unit, params: LinearLayout.LayoutParams): Button = smallButton(label, onClick).apply {
-        layoutParams = params
-    }
+    private fun smallButton(label: String, onClick: () -> Unit, params: LinearLayout.LayoutParams): Button = smallButton(label, onClick).apply { layoutParams = params }
 
     private fun windowAction(label: String, onClick: () -> Unit): TextView = text(label, 14f, bold = true, color = Material3Tokens.OnSurface).apply {
         gravity = Gravity.CENTER
@@ -373,9 +345,7 @@ class MainActivity : Activity() {
         gravity = Gravity.CENTER
         background = Material3Tokens.surface(Material3Tokens.TertiaryContainer, dp(18))
         setPadding(dp(12), dp(7), dp(12), dp(7))
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            leftMargin = dp(8)
-        }
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) }
     }
 
     private fun text(value: String, size: Float, bold: Boolean = false, color: Int): TextView = TextView(this).apply {

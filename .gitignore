@@ -20,3 +20,6 @@ resource/analysis/dex/
 resource/analysis/dex-strings.txt
 resource/analysis/dex-keyword-strings.txt
 resource/analysis/classes-dexdump-file.txt
+
+# Local device test artifacts
+resource/test/
