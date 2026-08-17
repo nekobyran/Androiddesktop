@@ -1,0 +1,22 @@
+# Build outputs
+.gradle/
+build/
+app/build/
+
+# Local APK inputs and generated release artifacts
+resource/apk/*.apk
+D:/vibecoding/release/
+release/
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+resource/analysis/dex/
+resource/analysis/dex-strings.txt
+resource/analysis/dex-keyword-strings.txt
+resource/analysis/classes-dexdump-file.txt

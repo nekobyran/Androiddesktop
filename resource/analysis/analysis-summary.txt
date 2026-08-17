@@ -1,0 +1,7 @@
+apk: D:\vibecoding\project\Androiddesktop\resource\apk\VoyageOS_demo.apk
+sha256: FE851978FA176CEB57E3C11E078322DBC52ECDE21241B539DBFDC8AB1E849966
+bytes: 36604030
+dexCount: 1
+generatedAt: 2026-08-17T21:41:02
+aapt: D:\vibecoding\sdk\android\build-tools\36.1.0\aapt.exe
+dexdump: D:\vibecoding\sdk\android\build-tools\36.1.0\dexdump.exe
