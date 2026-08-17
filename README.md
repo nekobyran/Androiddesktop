@@ -1,6 +1,6 @@
 # Androiddesktop
 
-Androiddesktop 是一个 clean-room Kotlin 示例工程，用于复现“Android 桌面模式 / 应用多窗口化”的公开原理：检测外接显示与输入设备、诊断 ADB 权限、请求以指定窗口边界启动目标 Activity，并为华为 / 荣耀真机画面测试提供步骤化证据采集。
+Androiddesktop 是一个 Apache-2.0 许可的 clean-room Kotlin 示例工程，用于复现“Android 桌面模式 / 应用多窗口化”的公开原理：检测外接显示与输入设备、诊断 ADB 权限、请求以指定窗口边界启动目标 Activity，并为华为 / 荣耀真机画面测试提供步骤化证据采集。
 
 ## 当前结论
 
