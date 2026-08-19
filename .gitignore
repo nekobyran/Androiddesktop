@@ -2,6 +2,7 @@
 .gradle/
 build/
 app/build/
+local.properties
 
 # Local APK inputs and generated release artifacts
 resource/apk/*.apk

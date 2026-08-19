@@ -9,11 +9,14 @@
 
 ## 当前产品定位
 
-Androiddesktop 是一个 clean-room Android 桌面容器原型。目标不是只把外部应用启动到系统自由窗，而是在本 App 内构建类 Windows 桌面：Material 3 风格桌面层、可拖动窗口、Dock、启动台、无线调试/特权核心状态与命令规划。真实嵌入其他 App 画面需要特权核心创建/管理 display session，并转发输入。
+Androiddesktop 是一个 clean-room Android 桌面容器原型。当前目标参考 niri 的 scrollable tiling 思路：窗口以横向滚动列排列，新窗口追加到右侧且不重排旧窗口，焦点切换使用平滑滚动和缩放/透明度动画；同时提供当前 APK 内置的 VR/空间桌面预览。真实嵌入其他 App 画面仍需要特权核心创建/管理 display session，并转发输入。
 
 ## 入口文件
 
-- `app/src/main/java/io/github/androiddesktop/MainActivity.kt`：Material 3 风格桌面容器 UI、Dock、启动台、可拖动窗口、session contract 和核心脚本入口。
+- `app/src/main/java/io/github/androiddesktop/MainActivity.kt`：Material 3 风格 niri-like 桌面容器 UI、Dock、启动台、横向滚动列、VR 预览、session contract 和核心脚本入口。
+- `app/src/main/java/io/github/androiddesktop/NiriStyleWindowManager.kt`：niri-like scrollable tiling 窗口管理模型，固定列宽、新窗口追加、焦点索引、浮动状态。
+- `app/src/main/java/io/github/androiddesktop/NiriWindowMotion.kt`：窗口入场、焦点列缩放/透明度、横向平滑滚动、pulse 动画。
+- `app/src/main/java/io/github/androiddesktop/VrSpatialPreviewView.kt`：双目空间桌面预览，使用当前窗口列映射到 VR 漂浮面板。
 - `app/src/main/java/io/github/androiddesktop/Material3Tokens.kt`：Material 3 风格颜色、surface、ripple token。
 - `app/src/main/java/io/github/androiddesktop/DesktopContainerModels.kt`：桌面 App、窗口、特权核心状态模型。
 - `app/src/main/java/io/github/androiddesktop/CoreSessionContracts.kt`：特权核心会话、显示 Surface、输入桥接和窗口生命周期契约。

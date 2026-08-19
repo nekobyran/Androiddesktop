@@ -8,7 +8,6 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.os.Bundle
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -24,11 +23,16 @@ import android.widget.Toast
 
 class MainActivity : Activity() {
     private lateinit var desktopLayer: FrameLayout
+    private lateinit var workspaceScroll: HorizontalScrollView
+    private lateinit var columnStrip: LinearLayout
     private lateinit var console: TextView
     private lateinit var packageInput: EditText
     private lateinit var launcherPanel: View
     private lateinit var corePlanner: ContainerCorePlanner
+    private lateinit var niriManager: NiriStyleWindowManager
+    private var vrPreview: VrSpatialPreviewView? = null
     private var windowSeq = 1
+    private val columnViews = linkedMapOf<Int, View>()
 
     private val apps = listOf(
         DesktopApp("设置", "com.android.settings", "⚙", "系统设置，常用于验证窗口承载"),
@@ -42,10 +46,11 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         corePlanner = ContainerCorePlanner(packageName)
+        niriManager = NiriStyleWindowManager(dp(18), dp(340), dp(330))
         setContentView(buildDesktopShell())
         desktopLayer.post {
-            addWindow(apps.first(), DisplayMode.PlaceholderSurface, "当前是占位 Surface；真实画面需要特权核心创建/绑定显示会话。")
-            updateConsole(corePlanner.principle())
+            addWindow(apps.first(), DisplayMode.PlaceholderSurface, "niri-like scrollable tiling column；真实画面仍需特权 display session。")
+            updateConsole(buildNiriIntro())
         }
     }
 
@@ -66,6 +71,10 @@ class MainActivity : Activity() {
             topMargin = dp(12)
             bottomMargin = dp(10)
         })
+        desktopLayer.addView(buildScrollableWorkspace(), FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        ))
         main.addView(buildDock())
         launcherPanel = buildLauncherPanel()
         root.addView(launcherPanel)
@@ -79,12 +88,32 @@ class MainActivity : Activity() {
         }
         val titleBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         titleBlock.addView(text("Androiddesktop", 24f, bold = true, color = Material3Tokens.OnSurface))
-        titleBlock.addView(text("Material 3 桌面容器 · Dock · 启动台 · 特权核心契约", 12f, color = Material3Tokens.OnSurfaceVariant))
+        titleBlock.addView(text("niri-like scrollable tiling · VR spatial preview · privileged core contract", 12f, color = Material3Tokens.OnSurfaceVariant))
         bar.addView(titleBlock, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        bar.addView(chip("无线调试"))
-        bar.addView(chip("Core contract"))
-        bar.addView(chip("Surface slot"))
+        bar.addView(chip("Scrollable columns"))
+        bar.addView(chip("No resize on open"))
+        bar.addView(chip("VR preview"))
         return bar
+    }
+
+    private fun buildScrollableWorkspace(): View {
+        workspaceScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+            setPadding(dp(8), dp(8), dp(8), dp(210))
+        }
+        columnStrip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            clipToPadding = false
+            setPadding(dp(4), dp(8), dp(460), dp(12))
+        }
+        workspaceScroll.addView(columnStrip, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        ))
+        return workspaceScroll
     }
 
     private fun buildDock(): View {
@@ -101,9 +130,12 @@ class MainActivity : Activity() {
         row.addView(dockButton("启动台", "◉") { toggleLauncher() })
         row.addView(dockButton("核心", "◆") { updateConsole(corePlanner.principle()) })
         row.addView(dockButton("会话", "▤") { showCoreSessionContract() })
+        row.addView(dockButton("VR", "◎") { toggleVrPreview() })
+        row.addView(dockButton("左移", "‹") { focusPreviousColumn() })
+        row.addView(dockButton("右移", "›") { focusNextColumn() })
         row.addView(dockButton("脚本", "⌁") { copyCoreCommands() })
         apps.take(5).forEach { app ->
-            row.addView(dockButton(app.label, app.glyph) { addWindow(app, DisplayMode.PlaceholderSurface, "${app.label} 的真实画面需要由特权核心启动到可承载 display。") })
+            row.addView(dockButton(app.label, app.glyph) { addWindow(app, DisplayMode.PlaceholderSurface, "追加到 niri-like 横向滚动列。") })
         }
         return scroll
     }
@@ -117,7 +149,7 @@ class MainActivity : Activity() {
             setPadding(dp(18), dp(18), dp(18), dp(18))
             elevation = 18f
         }
-        panel.layoutParams = FrameLayout.LayoutParams(dp(360), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.START).apply {
+        panel.layoutParams = FrameLayout.LayoutParams(dp(370), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.START).apply {
             leftMargin = dp(20)
             bottomMargin = dp(92)
         }
@@ -149,9 +181,10 @@ class MainActivity : Activity() {
             bottomMargin = dp(12)
         })
         val grid = GridLayout(this).apply { columnCount = 3; rowCount = 2 }
-        apps.forEach { app -> grid.addView(launcherTile(app), ViewGroup.LayoutParams(dp(104), dp(96))) }
+        apps.forEach { app -> grid.addView(launcherTile(app), ViewGroup.LayoutParams(dp(106), dp(98))) }
         panel.addView(grid)
-        panel.addView(smallButton("复制无线调试/核心脚本") { copyCoreCommands() }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) })
+        panel.addView(smallButton("显示 VR 空间预览") { toggleVrPreview(true) }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) })
+        panel.addView(smallButton("复制无线调试/核心脚本") { copyCoreCommands() }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
         return panel
     }
 
@@ -163,84 +196,142 @@ class MainActivity : Activity() {
 
     private fun addWindow(app: DesktopApp, mode: DisplayMode, note: String) {
         val id = windowSeq++
-        val left = dp(24 + (id % 4) * 34)
-        val top = dp(24 + (id % 3) * 42)
-        val bounds = Rect(left, top, left + dp(330), top + dp(250))
+        val state = niriManager.addWindow(id, app)
+        val bounds = state.focusedColumn?.bounds ?: Rect(0, 0, dp(340), dp(330))
         val window = DesktopWindow(id, app, bounds, mode, note)
-        val view = buildWindowView(window)
-        desktopLayer.addView(view)
-        view.translationY = 18f
-        view.alpha = 0f
-        view.animate().alpha(1f).translationY(0f).setDuration(220).start()
-        updateConsole(corePlanner.sessionBlueprint(app.packageName.ifEmpty { packageInput.text.toString() }, bounds))
+        val view = buildColumnView(window)
+        columnViews[id] = view
+        columnStrip.addView(view)
+        NiriWindowMotion.enterColumn(view)
+        applyWorkspaceState(state)
+        updateConsole(corePlanner.sessionBlueprint(app.packageName.ifEmpty { packageInput.text.toString() }, bounds) + "\n" + niriManager.describe())
+        toggleLauncher(false)
     }
 
-    private fun buildWindowView(window: DesktopWindow): View {
+    private fun buildColumnView(window: DesktopWindow): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = Material3Tokens.surface(Material3Tokens.SurfaceContainer, dp(22), Color.argb(72, 255, 255, 255), 1)
-            elevation = 14f
+            background = Material3Tokens.surface(Material3Tokens.SurfaceContainer, dp(24), Color.argb(72, 255, 255, 255), 1)
+            elevation = 12f
+            tag = window.id
+            setOnClickListener { focusColumn(window.id) }
         }
-        card.layoutParams = FrameLayout.LayoutParams(window.bounds.width(), window.bounds.height()).apply {
-            leftMargin = window.bounds.left
-            topMargin = window.bounds.top
+        card.layoutParams = LinearLayout.LayoutParams(dp(340), LinearLayout.LayoutParams.MATCH_PARENT).apply {
+            leftMargin = dp(8)
+            rightMargin = dp(10)
+            topMargin = dp(8)
+            bottomMargin = dp(18)
         }
+
         val title = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), dp(8), dp(8), dp(8))
-            background = Material3Tokens.surface(Material3Tokens.PrimaryContainer, dp(20))
+            background = Material3Tokens.surface(Material3Tokens.PrimaryContainer, dp(22))
         }
         title.addView(text("${window.app.glyph}  ${window.app.label}", 14f, bold = true, color = Material3Tokens.OnSurface), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        title.addView(windowAction("—") { card.visibility = View.GONE })
-        title.addView(windowAction("×") { desktopLayer.removeView(card) })
-        makeDraggable(card, title)
+        title.addView(windowAction("↔") { toggleFloating(window.id) })
+        title.addView(windowAction("×") { removeColumn(window.id) })
         card.addView(title)
+
+        val surface = FrameLayout(this).apply {
+            background = Material3Tokens.surface(Material3Tokens.Surface, dp(20), Color.argb(54, 157, 202, 255), 1)
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+        }
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(14), dp(12), dp(14), dp(12))
         }
         body.addView(text(window.app.glyph, 42f, bold = true, color = Material3Tokens.Primary))
         body.addView(text(window.app.packageName.ifEmpty { "custom package" }, 13f, color = Material3Tokens.OnSurface))
-        body.addView(text("SurfaceView / VirtualDisplay 插槽", 12f, color = Material3Tokens.OnSurfaceVariant))
-        body.addView(text("当前是 Material 3 容器占位。真实 App 画面需由无线调试/特权核心创建 display session 并转发输入。", 12f, color = Material3Tokens.Warning).apply { gravity = Gravity.CENTER })
-        body.addView(smallButton("查看 session contract") {
+        body.addView(text("niri column · Surface/VirtualDisplay slot", 12f, color = Material3Tokens.OnSurfaceVariant))
+        body.addView(text("打开新窗口不会重排旧列；焦点切换使用横向平滑滚动。真实 App 内容仍需特权 core 绑定 display session。", 12f, color = Material3Tokens.Warning).apply { gravity = Gravity.CENTER })
+        surface.addView(body, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        card.addView(surface, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f).apply {
+            topMargin = dp(10)
+            leftMargin = dp(10)
+            rightMargin = dp(10)
+        })
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+        }
+        actions.addView(smallButton("查看 session contract") {
+            focusColumn(window.id)
             updateConsole(corePlanner.sessionBlueprint(window.app.packageName.ifEmpty { packageInput.text.toString() }, window.bounds))
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) })
-        body.addView(smallButton("复制该窗口核心脚本") {
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        actions.addView(smallButton("复制该窗口核心脚本") {
+            focusColumn(window.id)
             val commands = corePlanner.coreLaunchScript(window.app.packageName.ifEmpty { packageInput.text.toString() }, window.bounds)
             copyText("Androiddesktop core bootstrap", commands)
             updateConsole(commands)
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
-        card.addView(body, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        card.addView(actions)
         return card
     }
 
-    private fun makeDraggable(target: View, handle: View) {
-        val down = FloatArray(4)
-        handle.setOnTouchListener { _, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    down[0] = event.rawX
-                    down[1] = event.rawY
-                    down[2] = target.x
-                    down[3] = target.y
-                    target.animate().scaleX(1.015f).scaleY(1.015f).setDuration(90).start()
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    target.x = down[2] + event.rawX - down[0]
-                    target.y = down[3] + event.rawY - down[1]
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    target.animate().scaleX(1f).scaleY(1f).setDuration(130).start()
-                    true
-                }
-                else -> false
-            }
+    private fun focusColumn(id: Int) {
+        applyWorkspaceState(niriManager.focusWindow(id))
+        updateConsole(niriManager.describe())
+    }
+
+    private fun removeColumn(id: Int) {
+        columnViews.remove(id)?.let { columnStrip.removeView(it) }
+        applyWorkspaceState(niriManager.removeWindow(id))
+        updateConsole(niriManager.describe())
+    }
+
+    private fun toggleFloating(id: Int) {
+        val state = niriManager.toggleFloating(id)
+        columnViews[id]?.let { NiriWindowMotion.pulse(it) }
+        applyWorkspaceState(state)
+        updateConsole("Floating toggled for window $id.\nFloating is a utility state and does not affect the scrollable tiling strip yet.\n\n${niriManager.describe()}")
+    }
+
+    private fun focusNextColumn() {
+        applyWorkspaceState(niriManager.focusNext())
+        updateConsole(niriManager.describe())
+    }
+
+    private fun focusPreviousColumn() {
+        applyWorkspaceState(niriManager.focusPrevious())
+        updateConsole(niriManager.describe())
+    }
+
+    private fun applyWorkspaceState(state: NiriWorkspaceState) {
+        state.columns.forEach { column ->
+            columnViews[column.windowId]?.let { NiriWindowMotion.focusColumn(it, column.focused) }
         }
+        NiriWindowMotion.smoothScrollTo(workspaceScroll, state.scrollX)
+        vrPreview?.setWorkspace(state)
+    }
+
+    private fun toggleVrPreview(forceVisible: Boolean? = null) {
+        val show = forceVisible ?: (vrPreview == null)
+        if (!show) {
+            vrPreview?.let { desktopLayer.removeView(it) }
+            vrPreview = null
+            updateConsole("VR spatial preview hidden. niri-like 2D scroll strip remains active.")
+            return
+        }
+        val preview = VrSpatialPreviewView(this).apply {
+            setWorkspace(niriManager.snapshot())
+            alpha = 0f
+            elevation = 32f
+            setOnClickListener { toggleVrPreview(false) }
+        }
+        vrPreview?.let { desktopLayer.removeView(it) }
+        vrPreview = preview
+        desktopLayer.addView(preview, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply {
+            leftMargin = dp(14)
+            rightMargin = dp(14)
+            topMargin = dp(14)
+            bottomMargin = dp(14)
+        })
+        preview.animate().alpha(1f).setDuration(220).start()
+        updateConsole("VR spatial preview enabled. This is a current-APK stereoscopic simulation: panels mirror niri columns; real XR/OpenXR integration remains a separate backend.")
+        toggleLauncher(false)
     }
 
     private fun toggleLauncher(forceVisible: Boolean? = null) {
@@ -256,7 +347,7 @@ class MainActivity : Activity() {
 
     private fun showCoreSessionContract() {
         val targetPackage = if (::packageInput.isInitialized) packageInput.text.toString() else "com.android.settings"
-        updateConsole(corePlanner.sessionBlueprint(targetPackage, Rect(dp(80), dp(80), dp(920), dp(720))))
+        updateConsole(corePlanner.sessionBlueprint(targetPackage, Rect(dp(80), dp(80), dp(920), dp(720))) + "\n" + niriManager.describe())
     }
 
     private fun copyCoreCommands() {
@@ -275,7 +366,7 @@ class MainActivity : Activity() {
                 setPadding(dp(10), dp(10), dp(10), dp(10))
                 addView(console)
             }
-            desktopLayer.addView(scroll, FrameLayout.LayoutParams(dp(390), dp(180), Gravity.BOTTOM or Gravity.END).apply {
+            desktopLayer.addView(scroll, FrameLayout.LayoutParams(dp(430), dp(190), Gravity.BOTTOM or Gravity.END).apply {
                 rightMargin = dp(10)
                 bottomMargin = dp(10)
             })
@@ -295,7 +386,7 @@ class MainActivity : Activity() {
             setPadding(dp(8), dp(8), dp(8), dp(8))
             background = Material3Tokens.ripple(Material3Tokens.Surface, dp(22))
             setOnClickListener {
-                if (app.packageName.isEmpty()) addCustomWindow() else addWindow(app, DisplayMode.PlaceholderSurface, "从启动台创建窗口；真实画面需要特权核心。")
+                if (app.packageName.isEmpty()) addCustomWindow() else addWindow(app, DisplayMode.PlaceholderSurface, "从启动台追加到 niri-like 列。")
                 toggleLauncher(false)
             }
         }
@@ -359,6 +450,17 @@ class MainActivity : Activity() {
     private fun copyText(label: String, value: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
+    }
+
+    private fun buildNiriIntro(): String = buildString {
+        appendLine("== Androiddesktop niri-like target ==")
+        appendLine("1. Scrollable tiling columns: windows live on a horizontal strip.")
+        appendLine("2. Opening a new app appends a column and does not resize existing columns.")
+        appendLine("3. Focus moves by smooth horizontal scrolling plus scale/glow animations.")
+        appendLine("4. Floating is a utility flag outside the main tiling model.")
+        appendLine("5. VR preview maps the same workspace into stereoscopic spatial panels.")
+        appendLine()
+        append(niriManager.describe())
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
