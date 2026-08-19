@@ -19,13 +19,15 @@
             android:name=".VrDesktopActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
             android:exported="false"
-            android:resizeableActivity="true" />
+            android:resizeableActivity="true"
+            android:screenOrientation="landscape" />
 
         <activity
             android:name=".MainActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
             android:exported="true"
-            android:resizeableActivity="true">
+            android:resizeableActivity="true"
+            android:screenOrientation="landscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

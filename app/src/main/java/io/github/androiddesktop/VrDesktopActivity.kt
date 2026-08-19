@@ -1,6 +1,7 @@
 package io.github.androiddesktop
 
 import android.app.Activity
+import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
@@ -27,6 +28,7 @@ class VrDesktopActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         corePlanner = ContainerCorePlanner(packageName)
         niriManager = NiriStyleWindowManager(dp(18), dp(340), dp(330))
         setContentView(buildVrShell())

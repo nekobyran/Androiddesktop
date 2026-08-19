@@ -1,6 +1,6 @@
 # Androiddesktop
 
-Androiddesktop 是一个 Apache-2.0 许可的 clean-room Kotlin Android 桌面容器原型。当前版本把桌面壳升级为 niri-like scrollable tiling：窗口以横向滚动列排列，新窗口追加到右侧且不重排旧窗口，焦点切换有平滑滚动、缩放和透明度动画。普通手机/平板只显示正常 2D 桌面；检测到 VR/XR 设备特征时才切换到专用 VR 空间桌面 Activity。
+Androiddesktop 是一个 Apache-2.0 许可的 clean-room Kotlin Android 桌面容器原型。当前版本默认横屏启动，桌面壳采用 niri-like scrollable tiling：窗口以横向滚动列排列，新窗口追加到右侧且不重排旧窗口，焦点切换有平滑滚动、缩放和透明度动画。普通手机/平板只显示正常 2D 桌面；检测到 VR/XR 设备特征时才切换到专用 VR 空间桌面 Activity。界面内置默认壁纸、默认/真实应用图标和完整无线调试导引。
 
 > 重要边界：普通 Android 三方 App 不能直接把任意其他应用的真实 Activity 画面嵌入自己的 View 层。本项目当前实现正常 2D 桌面壳、niri-like 窗口管理、VR-only 空间桌面 Activity、窗口容器和特权核心命令规划；真实 App 画面嵌入需要 Shizuku、无线 ADB、root 或系统签名级别的 core 进程创建/管理显示会话并转发输入。
 
@@ -15,7 +15,13 @@ Androiddesktop 是一个 Apache-2.0 许可的 clean-room Kotlin Android 桌面�
 
 | 文件 | 作用 |
 |---|---|
-| `MainActivity.kt` | Material 3 风格 niri-like 正常 2D 桌面容器 UI：Dock、启动台、横向滚动列、session contract、核心脚本入口。 |
+| `MainActivity.kt` | Material 3 风格 niri-like 正常 2D 桌面容器 UI：默认横屏、默认壁纸、Dock、启动台、横向滚动列、无线导引、session contract、核心脚本入口。 |
+| `DesktopWallpaperDrawable.kt` | 代码绘制默认壁纸，无外部素材依赖。 |
+| `DefaultAppIconDrawable.kt` | 代码绘制 fallback 默认图标；可解析包名优先使用系统真实应用图标。 |
+| `WirelessDebugGuide.kt` | 完整无线调试、ADB pairing/connect、授权、shell core 和验证命令导引。 |
+| `EmbeddedAppSurfaceView.kt` | SurfaceView + VirtualDisplay 会话槽，尝试通过 privileged core 启动目标 App 并转发点击。 |
+| `PrivilegedCoreClient.kt` | 与无线 ADB shell core 通信的 LocalSocket 客户端。 |
+| `PrivilegedShellCore.kt` | 可由 app_process 启动的 shell-UID core 原型，提供 launch/tap/key 命令。 |
 | `NiriStyleWindowManager.kt` | scrollable tiling 窗口管理模型：固定列宽、新窗口追加、焦点索引、浮动状态。 |
 | `NiriWindowMotion.kt` | 窗口入场、焦点列缩放/透明度、横向平滑滚动、pulse 动画。 |
 | `VrRuntimeDetector.kt` | VR/XR 运行时 gate：普通设备保持正常界面，VR/XR 设备切入 VR Activity。 |
@@ -38,6 +44,8 @@ Androiddesktop 是一个 Apache-2.0 许可的 clean-room Kotlin Android 桌面�
 4. 焦点列使用 scale/elevation/alpha 动画突出显示。
 5. 浮动按钮当前作为 utility flag，不破坏主滚动列布局。
 6. 普通 2D 界面不显示 VR 入口；VR/XR 设备自动进入 VR-only 空间桌面。
+7. 默认横屏，桌面背景由代码绘制；默认图标优先读取系统 App 图标，缺失时生成 fallback 图标。
+8. Dock 的“无线导引”提供从开发者选项、adb pair/connect 到 shell core、dumpsys 验证的完整流程。
 ```
 
 ## 构建
@@ -66,11 +74,11 @@ D:\vibecoding\release\Androiddesktop\release\Androiddesktop-release.apk
 
 ## 使用方向
 
-1. 打开 App 后看到 Material 3 风格 niri-like 桌面容器。
+1. 打开 App 后默认横屏进入 Material 3 风格 niri-like 正常 2D 桌面容器。
 2. 点击 Dock 或启动台选择目标应用；窗口会追加到横向滚动列。
 3. 点击“左移 / 右移”切换焦点列。
-4. 点击“VR”查看当前窗口列的双目空间预览。
-5. 点击“脚本”或窗口内按钮复制无线调试/特权核心验证脚本。
+4. 点击“无线导引”查看并复制完整无线调试、shell core 和验证命令。
+5. 点击“脚本”或窗口内按钮复制当前窗口特权核心验证脚本。
 
 ## License
 
