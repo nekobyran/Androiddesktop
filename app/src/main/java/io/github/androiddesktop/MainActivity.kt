@@ -41,14 +41,16 @@ class MainActivity : Activity() {
     private val columnViews = linkedMapOf<Int, View>()
     private val embeddedSessions = linkedMapOf<Int, EmbeddedAppSurfaceView>()
 
-    private val apps = listOf(
-        DesktopApp("设置", "com.android.settings", "⚙", "系统设置，常用于验证窗口承载"),
-        DesktopApp("文件", "com.android.documentsui", "▣", "DocumentsUI 文件选择/管理"),
-        DesktopApp("浏览器", "com.android.chrome", "◎", "浏览器类应用占位"),
-        DesktopApp("图库", "com.android.gallery3d", "◧", "媒体窗口占位"),
-        DesktopApp("终端", "com.termux", "⌘", "ADB/Shizuku 调试占位"),
-        DesktopApp("自定义", "", "+", "使用下方输入的包名")
-    )
+        private val apps by lazy {
+        listOf(
+            DesktopApp("设置", resolveLauncherPackage("com.android.settings"), "⚙", "系统设置，常用于验证窗口承载"),
+            DesktopApp("文件", resolveLauncherPackage("com.huawei.filemanager", "com.google.android.documentsui", "com.android.documentsui"), "▣", "优先使用设备真实文件管理器"),
+            DesktopApp("浏览器", resolveLauncherPackage("com.huawei.browser", "com.android.chrome"), "◎", "优先使用设备默认浏览器"),
+            DesktopApp("图库", resolveLauncherPackage("com.huawei.photos", "com.android.gallery3d", "com.google.android.apps.photos"), "◧", "优先使用设备图库"),
+            DesktopApp("计算器", resolveLauncherPackage("com.huawei.calculator", "com.android.calculator2", "com.google.android.calculator"), "＋", "轻量多窗口验证目标"),
+            DesktopApp("自定义", "", "+", "使用下方输入的包名")
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -70,20 +72,20 @@ class MainActivity : Activity() {
 
     private fun buildDesktopShell(): View {
         val root = FrameLayout(this).apply { background = DesktopWallpaperDrawable() }
-        val main = LinearLayout(this).apply {
+                val main = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(14), dp(16), dp(12))
+            setPadding(dp(12), dp(6), dp(12), dp(6))
         }
         root.addView(main, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         main.addView(buildTopBar())
         desktopLayer = FrameLayout(this).apply {
             background = Material3Tokens.surface(Color.argb(108, 16, 20, 28), dp(28), Color.argb(68, 255, 255, 255), 1)
             clipToPadding = false
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+                        setPadding(dp(6), dp(6), dp(6), dp(6))
         }
         main.addView(desktopLayer, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f).apply {
-            topMargin = dp(12)
-            bottomMargin = dp(10)
+                        topMargin = dp(5)
+            bottomMargin = dp(5)
         })
         desktopLayer.addView(buildScrollableWorkspace(), FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -103,8 +105,8 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val titleBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        titleBlock.addView(text("Androiddesktop", 24f, bold = true, color = Material3Tokens.OnSurface))
-        titleBlock.addView(text("niri-like scrollable tiling · normal 2D desktop · privileged core contract", 12f, color = Material3Tokens.OnSurfaceVariant))
+                titleBlock.addView(text("Androiddesktop", 20f, bold = true, color = Material3Tokens.OnSurface))
+        titleBlock.addView(text("niri-like tiling · privileged display core", 9f, color = Material3Tokens.OnSurfaceVariant))
         bar.addView(titleBlock, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         bar.addView(chip("Scrollable columns"))
         bar.addView(chip("No resize on open"))
@@ -113,17 +115,18 @@ class MainActivity : Activity() {
     }
 
     private fun buildScrollableWorkspace(): View {
-        workspaceScroll = HorizontalScrollView(this).apply {
+                workspaceScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
+            isFillViewport = true
             overScrollMode = View.OVER_SCROLL_NEVER
             clipToPadding = false
-            setPadding(dp(8), dp(8), dp(8), dp(210))
+                        setPadding(dp(4), dp(4), dp(4), dp(4))
         }
         columnStrip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             clipToPadding = false
-            setPadding(dp(4), dp(8), dp(460), dp(12))
+            setPadding(dp(2), dp(2), dp(460), dp(2))
         }
         workspaceScroll.addView(columnStrip, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -135,8 +138,8 @@ class MainActivity : Activity() {
     private fun buildDock(): View {
         val scroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
-            background = Material3Tokens.surface(Material3Tokens.SurfaceContainer, dp(30), Color.argb(64, 255, 255, 255), 1)
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+                        background = Material3Tokens.surface(Material3Tokens.SurfaceContainer, dp(24), Color.argb(64, 255, 255, 255), 1)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
         }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -274,20 +277,30 @@ class MainActivity : Activity() {
             tag = window.id
             setOnClickListener { focusColumn(window.id) }
         }
-        card.layoutParams = LinearLayout.LayoutParams(dp(340), LinearLayout.LayoutParams.MATCH_PARENT).apply {
-            leftMargin = dp(8)
-            rightMargin = dp(10)
-            topMargin = dp(8)
-            bottomMargin = dp(18)
+                card.layoutParams = LinearLayout.LayoutParams(dp(340), LinearLayout.LayoutParams.MATCH_PARENT).apply {
+            leftMargin = dp(4)
+            rightMargin = dp(6)
+            topMargin = dp(2)
+            bottomMargin = dp(4)
         }
 
         val title = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(8), dp(8), dp(8))
-            background = Material3Tokens.surface(Material3Tokens.PrimaryContainer, dp(22))
+                        setPadding(dp(10), dp(3), dp(6), dp(3))
+            background = Material3Tokens.surface(Material3Tokens.PrimaryContainer, dp(18))
         }
-        title.addView(text("${window.app.glyph}  ${window.app.label}", 14f, bold = true, color = Material3Tokens.OnSurface), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        title.addView(text("${window.app.glyph}  ${window.app.label}", 13f, bold = true, color = Material3Tokens.OnSurface), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        title.addView(windowAction("▤") {
+            focusColumn(window.id)
+            updateConsole(corePlanner.sessionBlueprint(window.app.packageName.ifEmpty { packageInput.text.toString() }, window.bounds))
+        })
+        title.addView(windowAction("⌁") {
+            focusColumn(window.id)
+            val commands = corePlanner.coreLaunchScript(window.app.packageName.ifEmpty { packageInput.text.toString() }, window.bounds)
+            copyText("Androiddesktop core bootstrap", commands)
+            updateConsole(commands)
+        })
         title.addView(windowAction("↔") { toggleFloating(window.id) })
         title.addView(windowAction("×") { removeColumn(window.id) })
         card.addView(title)
@@ -299,7 +312,10 @@ class MainActivity : Activity() {
         }
         val targetPackage = window.app.packageName.trim()
         if (targetPackage.isNotEmpty()) {
-            val embedded = EmbeddedAppSurfaceView(this, targetPackage, multiWindowLauncher) { state ->
+                        val embedded = EmbeddedAppSurfaceView(this, targetPackage, multiWindowLauncher) { state ->
+                if (state.launched && ::launcherPanel.isInitialized && launcherPanel.visibility == View.VISIBLE) {
+                    toggleLauncher(false)
+                }
                 updateConsole(buildString {
                     appendLine("== Embedded display session ==")
                     appendLine("windowId=${window.id}")
@@ -320,27 +336,12 @@ class MainActivity : Activity() {
             body.addView(text("请输入有效包名后再创建窗口", 12f, color = Material3Tokens.Warning))
             surface.addView(body, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         }
-        card.addView(surface, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f).apply {
-            topMargin = dp(10)
-            leftMargin = dp(10)
-            rightMargin = dp(10)
+                card.addView(surface, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f).apply {
+            topMargin = dp(4)
+            leftMargin = dp(4)
+            rightMargin = dp(4)
+            bottomMargin = dp(4)
         })
-
-        val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(10), dp(10), dp(10))
-        }
-        actions.addView(smallButton("查看 session contract") {
-            focusColumn(window.id)
-            updateConsole(corePlanner.sessionBlueprint(window.app.packageName.ifEmpty { packageInput.text.toString() }, window.bounds))
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        actions.addView(smallButton("复制该窗口核心脚本") {
-            focusColumn(window.id)
-            val commands = corePlanner.coreLaunchScript(window.app.packageName.ifEmpty { packageInput.text.toString() }, window.bounds)
-            copyText("Androiddesktop core bootstrap", commands)
-            updateConsole(commands)
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
-        card.addView(actions)
         return card
     }
 
@@ -468,8 +469,8 @@ class MainActivity : Activity() {
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            background = Material3Tokens.ripple(Material3Tokens.SecondaryContainer, dp(22))
-            setPadding(dp(8), dp(6), dp(8), dp(6))
+                        background = Material3Tokens.ripple(Material3Tokens.SecondaryContainer, dp(18))
+            setPadding(dp(5), dp(3), dp(5), dp(3))
             setOnClickListener {
                 animate().scaleX(0.94f).scaleY(0.94f).setDuration(70).withEndAction {
                     animate().scaleX(1f).scaleY(1f).setDuration(120).start()
@@ -477,9 +478,9 @@ class MainActivity : Activity() {
                 }.start()
             }
         }
-        box.addView(iconView(app, 34))
-        box.addView(text(app.label, 9f, color = Material3Tokens.OnSurfaceVariant))
-        box.layoutParams = LinearLayout.LayoutParams(dp(72), dp(64)).apply { rightMargin = dp(8) }
+                box.addView(iconView(app, 24))
+        box.addView(text(app.label, 8f, color = Material3Tokens.OnSurfaceVariant))
+        box.layoutParams = LinearLayout.LayoutParams(dp(62), dp(48)).apply { rightMargin = dp(5) }
         return box
     }
 
@@ -487,8 +488,8 @@ class MainActivity : Activity() {
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            background = Material3Tokens.ripple(Material3Tokens.SecondaryContainer, dp(22))
-            setPadding(dp(10), dp(7), dp(10), dp(7))
+                        background = Material3Tokens.ripple(Material3Tokens.SecondaryContainer, dp(18))
+            setPadding(dp(6), dp(3), dp(6), dp(3))
             setOnClickListener {
                 animate().scaleX(0.94f).scaleY(0.94f).setDuration(70).withEndAction {
                     animate().scaleX(1f).scaleY(1f).setDuration(120).start()
@@ -496,9 +497,9 @@ class MainActivity : Activity() {
                 }.start()
             }
         }
-        box.addView(text(glyph, 20f, bold = true, color = Material3Tokens.OnSurface))
-        box.addView(text(label, 9f, color = Material3Tokens.OnSurfaceVariant))
-        box.layoutParams = LinearLayout.LayoutParams(dp(84), dp(64)).apply { rightMargin = dp(8) }
+                box.addView(text(glyph, 16f, bold = true, color = Material3Tokens.OnSurface))
+        box.addView(text(label, 8f, color = Material3Tokens.OnSurfaceVariant))
+        box.layoutParams = LinearLayout.LayoutParams(dp(68), dp(48)).apply { rightMargin = dp(5) }
         return box
     }
 
@@ -509,13 +510,18 @@ class MainActivity : Activity() {
         layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp)).apply { bottomMargin = dp(4) }
     }
 
-    private fun resolveAppIcon(app: DesktopApp): Drawable {
+        private fun resolveAppIcon(app: DesktopApp): Drawable {
         val pkg = app.packageName
         if (pkg.isNotEmpty()) {
             runCatching { return packageManager.getApplicationIcon(pkg) }
         }
         return DefaultAppIconDrawable(app.label, app.glyph, app.packageName)
     }
+
+    private fun resolveLauncherPackage(vararg candidates: String): String =
+        candidates.firstOrNull { candidate ->
+            runCatching { packageManager.getLaunchIntentForPackage(candidate) != null }.getOrDefault(false)
+        } ?: candidates.firstOrNull().orEmpty()
 
     private fun smallButton(label: String, onClick: () -> Unit): Button = Button(this).apply {
         text = label
@@ -534,11 +540,11 @@ class MainActivity : Activity() {
         layoutParams = LinearLayout.LayoutParams(dp(34), dp(30)).apply { leftMargin = dp(6) }
     }
 
-    private fun chip(label: String): TextView = text(label, 12f, bold = true, color = Material3Tokens.OnSurface).apply {
+        private fun chip(label: String): TextView = text(label, 9f, bold = true, color = Material3Tokens.OnSurface).apply {
         gravity = Gravity.CENTER
-        background = Material3Tokens.surface(Material3Tokens.TertiaryContainer, dp(18))
-        setPadding(dp(12), dp(7), dp(12), dp(7))
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) }
+        background = Material3Tokens.surface(Material3Tokens.TertiaryContainer, dp(14))
+        setPadding(dp(8), dp(4), dp(8), dp(4))
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(5) }
     }
 
     private fun text(value: String, size: Float, bold: Boolean = false, color: Int): TextView = TextView(this).apply {

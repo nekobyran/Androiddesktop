@@ -4,7 +4,8 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
-    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+        <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <uses-feature android:name="android.software.freeform_window_management" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />

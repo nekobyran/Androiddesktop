@@ -1,175 +1,138 @@
 param(
-    [string]$Adb = "D:\vibecoding\sdk\android\platform-tools\adb.exe",
-    [string]$Apk = "D:\vibecoding\release\Androiddesktop\release\Androiddesktop-release.apk",
-    [string]$OutRoot = "D:\vibecoding\project\Androiddesktop\resource\test"
+    [string]$Apk = 'app\build\outputs\apk\debug\app-debug.apk',
+    [string]$HostPackage = 'io.github.androiddesktop.dev',
+    [string]$SecondLauncherLabel = '文件',
+    [string]$SecondPackage = 'com.huawei.filemanager',
+    [string]$OutputDir = 'resource\test\huawei-forwarding-script'
 )
 
-$ErrorActionPreference = "Stop"
-$pkg = "io.github.androiddesktop"
-$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$out = Join-Path $OutRoot "huawei-forwarding-$stamp"
-New-Item -ItemType Directory -Force -Path $out | Out-Null
+$ErrorActionPreference = 'Stop'
+$root = (Resolve-Path -Path (Join-Path $PSScriptRoot '..')).Path
+$adb = 'D:\vibecoding\sdk\android\platform-tools\adb.exe'
+if (!(Test-Path $adb)) { throw "adb missing: $adb" }
 
-function Run-Adb {
-    param([string[]]$ArgsList, [string]$Name)
-    $stdout = Join-Path $out "$Name.stdout.txt"
-    $stderr = Join-Path $out "$Name.stderr.txt"
-    & $Adb @ArgsList > $stdout 2> $stderr
-    [pscustomobject]@{ Name=$Name; ExitCode=$LASTEXITCODE; Stdout=$stdout; Stderr=$stderr }
+if (![System.IO.Path]::IsPathRooted($Apk)) { $Apk = Join-Path $root $Apk }
+if (![System.IO.Path]::IsPathRooted($OutputDir)) { $OutputDir = Join-Path $root $OutputDir }
+if (!(Test-Path $Apk)) { throw "APK missing: $Apk" }
+New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+
+function Invoke-Adb {
+    $argumentList = @($args)
+    $result = & $adb @argumentList
+    if ($LASTEXITCODE -ne 0) { throw "adb failed ($LASTEXITCODE): adb $($argumentList -join ' ')`n$result" }
+    return $result
 }
 
-function Dump-Adb {
-    param([string[]]$ArgsList, [string]$Name)
-    $path = Join-Path $out $Name
-    & $Adb @ArgsList > $path 2>&1
-    $path
+function Save-AdbText([string]$Path, [string[]]$AdbArgs) {
+    $content = & $adb @AdbArgs
+    if ($LASTEXITCODE -ne 0) { throw "adb failed ($LASTEXITCODE): adb $($AdbArgs -join ' ')`n$content" }
+    @($content) | Set-Content -Path $Path -Encoding utf8
 }
 
-function Pull-Remote {
-    param([string]$Remote, [string]$Name)
-    $path = Join-Path $out $Name
-    & $Adb pull $Remote $path | Out-Null
-    $path
+$devices = @(Invoke-Adb devices -l | Where-Object { $_ -match '\sdevice\s' })
+if ($devices.Count -ne 1) { throw "Expected exactly one authorized Android device, got $($devices.Count)." }
+$devices | Set-Content (Join-Path $OutputDir '00-device.txt') -Encoding utf8
+$model = (Invoke-Adb shell getprop ro.product.model | Select-Object -First 1).Trim()
+$model | Set-Content (Join-Path $OutputDir '01-model.txt') -Encoding utf8
+if ($model -notmatch 'BRQ|HUAWEI|HONOR') {
+    Write-Warning "Connected model '$model' is not the BRQ Huawei reference device; continuing because the caller explicitly selected this device."
 }
 
-function First-TaskIdForPackage {
-    param([string]$Text, [string]$Package)
-    $escaped = [regex]::Escape($Package)
-    $pattern = "Task\{[^\n]+#(?<id>\d+)[^\n]+$escaped[^\n]+mode=freeform"
-    $match = [regex]::Match($Text, $pattern)
-    if ($match.Success) { return [int]$match.Groups['id'].Value }
-    return $null
-}
+$install = Invoke-Adb install -r $Apk
+$install | Set-Content (Join-Path $OutputDir '02-install.txt') -Encoding utf8
+Invoke-Adb shell pm grant $HostPackage android.permission.WRITE_SECURE_SETTINGS | Out-Null
+Invoke-Adb shell appops set $HostPackage SYSTEM_ALERT_WINDOW allow | Out-Null
+Invoke-Adb shell appops set $HostPackage GET_USAGE_STATS allow | Out-Null
 
-function Try-PullXmlAndPng {
-    param([string]$BaseRemote, [string]$BaseName)
-    Run-Adb -ArgsList @("shell", "uiautomator", "dump", "$BaseRemote.xml") -Name "$BaseName-dump" | Out-Null
-    if ((Run-Adb -ArgsList @("shell", "ls", "$BaseRemote.xml") -Name "$BaseName-ls-xml").ExitCode -eq 0) {
-        Pull-Remote "$BaseRemote.xml" "$BaseName.xml" | Out-Null
-    }
-    Run-Adb -ArgsList @("shell", "screencap", "-p", "$BaseRemote.png") -Name "$BaseName-screencap" | Out-Null
-    if ((Run-Adb -ArgsList @("shell", "ls", "$BaseRemote.png") -Name "$BaseName-ls-png").ExitCode -eq 0) {
-        Pull-Remote "$BaseRemote.png" "$BaseName.png" | Out-Null
-    }
-}
-
-$steps = New-Object System.Collections.Generic.List[object]
-$steps.Add((Run-Adb -ArgsList @("devices", "-l") -Name "00-devices"))
-$steps.Add((Run-Adb -ArgsList @("uninstall", $pkg) -Name "01-uninstall-old"))
-$steps.Add((Run-Adb -ArgsList @("install", $Apk) -Name "02-install"))
-$steps.Add((Run-Adb -ArgsList @("shell", "appops", "set", $pkg, "SYSTEM_ALERT_WINDOW", "allow") -Name "03-appops-overlay"))
-$steps.Add((Run-Adb -ArgsList @("shell", "appops", "set", $pkg, "GET_USAGE_STATS", "allow") -Name "04-appops-usage"))
-$steps.Add((Run-Adb -ArgsList @("shell", "pm", "grant", $pkg, "android.permission.WRITE_SECURE_SETTINGS") -Name "05-grant-secure"))
-$steps.Add((Run-Adb -ArgsList @("shell", "settings", "put", "global", "enable_freeform_support", "1") -Name "06-freeform"))
-$steps.Add((Run-Adb -ArgsList @("shell", "settings", "put", "global", "force_resizable_activities", "1") -Name "07-resizable"))
-$steps.Add((Run-Adb -ArgsList @("shell", "am", "force-stop", $pkg) -Name "08-force-stop-host"))
-$steps.Add((Run-Adb -ArgsList @("shell", "am", "start", "-n", "$pkg/.MainActivity") -Name "09-start-host"))
-Start-Sleep -Seconds 3
-
-Try-PullXmlAndPng -BaseRemote "/sdcard/androiddesktop-host" -BaseName "host-landscape-default"
-Dump-Adb -ArgsList @("shell", "dumpsys", "activity", "activities") -Name "host-dumpsys-activity.txt" | Out-Null
-
-# Open wireless guide by looking for the clickable dock node that contains the guide label in the current default layout.
-$hostXmlPath = Join-Path $out "host-landscape-default.xml"
-$tapX = 1240
-$tapY = 1065
-if (Test-Path $hostXmlPath) {
-    $hostXmlForTap = Get-Content $hostXmlPath -Raw -Encoding UTF8
-    $match = [regex]::Match($hostXmlForTap, 'text="无线导引"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"')
-    if ($match.Success) {
-        $tapX = [int](([int]$match.Groups[1].Value + [int]$match.Groups[3].Value) / 2)
-        $tapY = [int](([int]$match.Groups[2].Value + [int]$match.Groups[4].Value) / 2)
-    }
-}
-$steps.Add((Run-Adb -ArgsList @("shell", "input", "tap", "$tapX", "$tapY") -Name "10-tap-wireless-guide"))
-Start-Sleep -Seconds 1
-Try-PullXmlAndPng -BaseRemote "/sdcard/androiddesktop-guide" -BaseName "host-wireless-guide"
-
-# Huawei BRQ-AN00 accepts cmd activity start-activity --windowingMode 5; am start --bounds is not supported on this ROM.
-$steps.Add((Run-Adb -ArgsList @("shell", "cmd", "activity", "start-activity", "--windowingMode", "5", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", "-p", "com.android.settings") -Name "11-start-settings-freeform"))
-Start-Sleep -Seconds 1
-$steps.Add((Run-Adb -ArgsList @("shell", "cmd", "activity", "start-activity", "--windowingMode", "5", "-n", "com.huawei.calculator/.Calculator") -Name "12-start-calculator-freeform"))
-Start-Sleep -Seconds 1
-$activityBeforeResize = Dump-Adb -ArgsList @("shell", "dumpsys", "activity", "activities") -Name "before-resize-dumpsys-activity.txt"
-$activityText = Get-Content $activityBeforeResize -Raw -Encoding UTF8
-$settingsTask = First-TaskIdForPackage -Text $activityText -Package "com.android.settings"
-$calculatorTask = First-TaskIdForPackage -Text $activityText -Package "com.huawei.calculator"
-
-if ($settingsTask) {
-    $steps.Add((Run-Adb -ArgsList @("shell", "cmd", "activity", "task", "resize", "$settingsTask", "40", "90", "1280", "980") -Name "13-resize-settings"))
-}
-if ($calculatorTask) {
-    $steps.Add((Run-Adb -ArgsList @("shell", "cmd", "activity", "task", "resize", "$calculatorTask", "1360", "90", "2600", "980") -Name "14-resize-calculator"))
-}
+# Launch once so CoreAuthTokenStore provisions the per-install token in app-scoped external storage.
+Invoke-Adb shell am force-stop $HostPackage | Out-Null
+Invoke-Adb shell am start -n "$HostPackage/io.github.androiddesktop.MainActivity" | Out-Null
 Start-Sleep -Seconds 2
+$tokenPath = "/sdcard/Android/data/$HostPackage/files/androiddesktop-core.token"
+$tokenStat = Invoke-Adb shell ls -l $tokenPath
+$tokenStat | Set-Content (Join-Path $OutputDir '03-token-stat.txt') -Encoding utf8
 
-Try-PullXmlAndPng -BaseRemote "/sdcard/androiddesktop-freeform-two" -BaseName "freeform-two-resized"
-$finalActivity = Dump-Adb -ArgsList @("shell", "dumpsys", "activity", "activities") -Name "freeform-two-dumpsys-activity.txt"
-$finalWindow = Dump-Adb -ArgsList @("shell", "dumpsys", "window", "windows") -Name "freeform-two-dumpsys-window.txt"
-Dump-Adb -ArgsList @("shell", "dumpsys", "display") -Name "freeform-two-dumpsys-display.txt" | Out-Null
-
-$hostXml = if (Test-Path $hostXmlPath) { Get-Content $hostXmlPath -Raw -Encoding UTF8 } else { "" }
-$guideXmlPath = Join-Path $out "host-wireless-guide.xml"
-$guideXml = if (Test-Path $guideXmlPath) { Get-Content $guideXmlPath -Raw -Encoding UTF8 } else { "" }
-$finalActivityText = Get-Content $finalActivity -Raw -Encoding UTF8
-$finalWindowText = Get-Content $finalWindow -Raw -Encoding UTF8
-
-$hasLandscape = $hostXml -match 'rotation="1"'
-$hasNormalUi = $hostXml.Contains("Normal mode") -and ($hostXml.Contains("无线导引") -or $hostXml.Contains("adb pair"))
-$hasGuide = $guideXml.Contains("adb pair") -and $guideXml.Contains("adb connect") -and $guideXml.Contains("WRITE_SECURE_SETTINGS")
-$hasSettings = $finalActivityText.Contains("com.android.settings") -and $finalActivityText.Contains("mode=freeform")
-$hasCalculator = $finalActivityText.Contains("com.huawei.calculator") -and $finalActivityText.Contains("mode=freeform")
-$hasSettingsBounds = $finalActivityText.Contains("Rect(40, 90 - 1280, 980)")
-$hasCalculatorBounds = $finalActivityText.Contains("Rect(1360, 90 - 2600, 980)")
-$hasSurfaces = $finalWindowText.Contains("com.android.settings") -and $finalWindowText.Contains("com.huawei.calculator") -and $finalWindowText.Contains("mSurface=Surface")
-
-$hashLines = @()
-foreach ($fileName in @("host-landscape-default.png", "host-wireless-guide.png", "freeform-two-resized.png")) {
-    $file = Join-Path $out $fileName
-    if (Test-Path $file) {
-        $hash = Get-FileHash -Algorithm SHA256 $file
-        $bytes = (Get-Item $file).Length
-        $hashLines += "| $fileName | $($hash.Hash) | $bytes |"
-    }
+Invoke-Adb shell pkill -f io.github.androiddesktop.PrivilegedShellCore | Out-Null
+$coreCommand = "APK=`$(pm path $HostPackage | head -n 1 | cut -d: -f2); TOKEN=`$(cat $tokenPath); CLASSPATH=`$APK nohup app_process /system/bin io.github.androiddesktop.PrivilegedShellCore `$TOKEN >/data/local/tmp/androiddesktop-core.log 2>&1 </dev/null &"
+Invoke-Adb shell $coreCommand | Out-Null
+Start-Sleep -Milliseconds 800
+$coreLog = @(Invoke-Adb shell cat /data/local/tmp/androiddesktop-core.log)
+$coreLog | Set-Content (Join-Path $OutputDir '04-core-log.txt') -Encoding utf8
+if (($coreLog -join "`n") -notmatch 'ANDROIDDESKTOP_CORE_READY host=127\.0\.0\.1 port=38388') {
+    throw 'Privileged shell core did not reach READY state.'
 }
 
-$report = @"
-# Huawei forwarding verification
+Invoke-Adb logcat -c | Out-Null
+Invoke-Adb shell am force-stop $HostPackage | Out-Null
+Invoke-Adb shell am start -n "$HostPackage/io.github.androiddesktop.MainActivity" | Out-Null
+Start-Sleep -Seconds 5
 
-Device: Huawei BRQ-AN00 / JXB0221819006346
-Package: $pkg
-APK: $Apk
+# Trigger a second host window through Androiddesktop's own Dock/launcher UI, not by shell-starting the target app.
+Invoke-Adb shell uiautomator dump /sdcard/androiddesktop-test-before.xml | Out-Null
+Invoke-Adb pull /sdcard/androiddesktop-test-before.xml (Join-Path $OutputDir '10-before.xml') | Out-Null
+[xml]$before = Get-Content (Join-Path $OutputDir '10-before.xml') -Raw -Encoding utf8
+$labelNodes = @($before.SelectNodes("//node[@text='$SecondLauncherLabel']"))
+$clickTarget = $labelNodes | Where-Object { $_.ParentNode.clickable -eq 'true' } | Select-Object -First 1
+if ($null -eq $clickTarget) { throw "Could not find clickable '$SecondLauncherLabel' target in Androiddesktop UI." }
+$bounds = $clickTarget.ParentNode.bounds
+if ($bounds -notmatch '\[(\d+),(\d+)\]\[(\d+),(\d+)\]') { throw "Invalid UI bounds: $bounds" }
+$x = [int](([int]$Matches[1] + [int]$Matches[3]) / 2)
+$y = [int](([int]$Matches[2] + [int]$Matches[4]) / 2)
+"label=$SecondLauncherLabel bounds=$bounds tap=$x,$y" | Set-Content (Join-Path $OutputDir '11-second-window-click.txt') -Encoding utf8
+Invoke-Adb shell input tap $x $y | Out-Null
+Start-Sleep -Seconds 6
 
-## Checks
+Save-AdbText (Join-Path $OutputDir '20-display.txt') @('shell', 'dumpsys', 'display')
+Save-AdbText (Join-Path $OutputDir '21-activity.txt') @('shell', 'dumpsys', 'activity', 'activities')
+Save-AdbText (Join-Path $OutputDir '22-window.txt') @('shell', 'dumpsys', 'window', 'windows')
+$embedLog = @(Invoke-Adb logcat -d -s AndroiddesktopEmbed:I '*:S')
+$embedLog | Set-Content (Join-Path $OutputDir '23-embed-log.txt') -Encoding utf8
 
-| Check | Result |
-|---|---|
-| Host default landscape | $hasLandscape |
-| Normal UI contains wireless guide entry | $hasNormalUi |
-| Wireless debugging guide content captured | $hasGuide |
-| Settings freeform task | $hasSettings |
-| Calculator freeform task | $hasCalculator |
-| Settings resized bounds | $hasSettingsBounds |
-| Calculator resized bounds | $hasCalculatorBounds |
-| Window surfaces for both target apps | $hasSurfaces |
+$displayRaw = Get-Content (Join-Path $OutputDir '20-display.txt') -Raw -Encoding utf8
+$activityRaw = Get-Content (Join-Path $OutputDir '21-activity.txt') -Raw -Encoding utf8
+$settingsMatch = [regex]::Match($displayRaw, 'mBaseDisplayInfo=DisplayInfo\{"Androiddesktop-com-android-settings-[^"]+", displayId (\d+)')
+$secondName = $SecondPackage.Replace('.', '-')
+$secondPattern = 'mBaseDisplayInfo=DisplayInfo\{"Androiddesktop-' + [regex]::Escape($secondName) + '-[^"]+", displayId (\d+)'
+$secondMatch = [regex]::Match($displayRaw, $secondPattern)
+if (!$settingsMatch.Success) { throw 'Settings VirtualDisplay was not found.' }
+if (!$secondMatch.Success) { throw "$SecondPackage VirtualDisplay was not found." }
+$settingsDisplay = [int]$settingsMatch.Groups[1].Value
+$secondDisplay = [int]$secondMatch.Groups[1].Value
+if ($settingsDisplay -eq 0 -or $secondDisplay -eq 0 -or $settingsDisplay -eq $secondDisplay) {
+    throw "Invalid display mapping: settings=$settingsDisplay second=$secondDisplay"
+}
 
-## Task IDs
+$settingsTaskPattern = "Display: mDisplayId=$settingsDisplay[\s\S]{0,6000}com\.android\.settings/.HWSettings"
+$secondTaskPattern = "Display: mDisplayId=$secondDisplay[\s\S]{0,6000}$([regex]::Escape($SecondPackage))/"
+if ($activityRaw -notmatch $settingsTaskPattern) { throw "Settings task was not found on display $settingsDisplay." }
+if ($activityRaw -notmatch $secondTaskPattern) { throw "$SecondPackage task was not found on display $secondDisplay." }
 
-- Settings task: $settingsTask
-- Calculator task: $calculatorTask
+Invoke-Adb shell screencap -p /sdcard/androiddesktop-host.png | Out-Null
+Invoke-Adb pull /sdcard/androiddesktop-host.png (Join-Path $OutputDir '30-host.png') | Out-Null
+Invoke-Adb shell screencap -d $settingsDisplay -p /sdcard/androiddesktop-settings.png | Out-Null
+Invoke-Adb pull /sdcard/androiddesktop-settings.png (Join-Path $OutputDir '31-settings-display.png') | Out-Null
+Invoke-Adb shell screencap -d $secondDisplay -p /sdcard/androiddesktop-second.png | Out-Null
+Invoke-Adb pull /sdcard/androiddesktop-second.png (Join-Path $OutputDir '32-second-display.png') | Out-Null
 
-## Screenshot hashes
+$images = @('30-host.png', '31-settings-display.png', '32-second-display.png')
+$hashLines = foreach ($name in $images) {
+    $path = Join-Path $OutputDir $name
+    if ((Get-Item $path).Length -lt 1024) { throw "Screenshot is unexpectedly small: $path" }
+    $hash = Get-FileHash $path -Algorithm SHA256
+    "$($hash.Hash)  $name"
+}
+$hashLines | Set-Content (Join-Path $OutputDir '33-screenshot-sha256.txt') -Encoding ascii
 
-| File | SHA-256 | Bytes |
-|---|---|---|
-$($hashLines -join "`n")
-
-## Boundary
-
-This validates Huawei system-level multi-window/freeform forwarding display through shell ActivityTaskManager. It does not by itself prove target apps are embedded inside Androiddesktop's own SurfaceView. In-host Surface forwarding requires a running privileged core and display/session/Surface binding evidence.
-"@
-$report | Set-Content -Encoding UTF8 (Join-Path $out "forwarding-report.md")
-$steps | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 (Join-Path $out "steps.json")
-
-Write-Host "FORWARDING_TEST_OUT=$out"
-Write-Host "LANDSCAPE=$hasLandscape NORMAL_UI=$hasNormalUi GUIDE=$hasGuide SETTINGS=$hasSettings CALCULATOR=$hasCalculator SETTINGS_BOUNDS=$hasSettingsBounds CALCULATOR_BOUNDS=$hasCalculatorBounds SURFACES=$hasSurfaces"
+$report = @(
+    'RESULT=PASS'
+    "MODEL=$model"
+    "HOST_PACKAGE=$HostPackage"
+    "SETTINGS_DISPLAY=$settingsDisplay"
+    "SECOND_PACKAGE=$SecondPackage"
+    "SECOND_DISPLAY=$secondDisplay"
+    'CORE=READY_AUTHENTICATED_LOOPBACK'
+    'ASSERTION=two distinct Androiddesktop VirtualDisplays each contain a real launcher Activity task'
+    "EVIDENCE_DIR=$OutputDir"
+)
+$report | Set-Content (Join-Path $OutputDir '40-report.txt') -Encoding utf8
+$report

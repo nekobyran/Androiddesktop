@@ -6,6 +6,7 @@ import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.SurfaceHolder
@@ -28,7 +29,7 @@ class EmbeddedAppSurfaceView(
     )
 
     private val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-    private val coreClient = PrivilegedCoreClient()
+        private val coreClient = PrivilegedCoreClient(context)
     private val surfaceView = SurfaceView(context)
     private val statusView = TextView(context)
     private var virtualDisplay: VirtualDisplay? = null
@@ -160,7 +161,8 @@ class EmbeddedAppSurfaceView(
         Thread({ coreClient.tap(displayId, x, y) }, "Androiddesktop-input-$displayId").start()
     }
 
-    private fun publish(state: State) {
+        private fun publish(state: State) {
+        Log.i("AndroiddesktopEmbed", "target=$targetPackage displayId=${state.displayId} core=${state.coreConnected} launched=${state.launched} message=${state.message}")
         statusView.text = state.message
         statusView.visibility = if (state.launched) GONE else VISIBLE
         onState(state)

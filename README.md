@@ -2,14 +2,14 @@
 
 Androiddesktop 是一个 Apache-2.0 许可的 clean-room Kotlin Android 桌面容器原型。当前版本默认横屏启动，桌面壳采用 niri-like scrollable tiling：窗口以横向滚动列排列，新窗口追加到右侧且不重排旧窗口，焦点切换有平滑滚动、缩放和透明度动画。普通手机/平板只显示正常 2D 桌面；检测到 VR/XR 设备特征时才切换到专用 VR 空间桌面 Activity。界面内置默认壁纸、默认/真实应用图标和完整无线调试导引。
 
-> 重要边界：普通 Android 三方 App 不能直接把任意其他应用的真实 Activity 画面嵌入自己的 View 层。本项目当前实现正常 2D 桌面壳、niri-like 窗口管理、VR-only 空间桌面 Activity、窗口容器和特权核心命令规划；真实 App 画面嵌入需要 Shizuku、无线 ADB、root 或系统签名级别的 core 进程创建/管理显示会话并转发输入。
+> 重要边界：普通 Android 三方 App 自身不能任意托管其他应用的 Activity。本项目通过用户显式开启无线调试后启动的 shell-UID `app_process` core，把目标 App 启动到宿主创建的 `VirtualDisplay`，由 `SurfaceView` 显示内容并通过 display-aware input 转发点击；不启用特权 core 时仍受普通 App 的跨 display 启动权限限制。
 
 ## 当前结论
 
 - 已授权 APK 保存于 `resource/apk/VoyageOS_demo.apk`，静态分析脚本输出到 `resource/analysis/`。
 - 静态与华为真机界面证据显示原软件更接近“桌面容器 + 特权核心 + 虚拟显示”模型，而不只是普通 `ActivityOptions.launchBounds` 多窗口启动器。
 - niri-like 目标来自 scrollable tiling 思路：窗口存在于横向滚动列中，打开新窗口不会导致既有窗口重新缩放或重排。
-- 本开源版当前不会伪装已经完成真实第三方 App 画面嵌入；UI 中窗口内容明确标记为 `SurfaceView / VirtualDisplay slot`。
+- 华为 BRQ-AN00 真机已验证：Androiddesktop 同时创建两个 `1053×469` VirtualDisplay，系统设置运行在独立 display，华为文件管理器运行在另一独立 display；对应 display 截图均出现真实 App 内容。
 
 ## 实现模块
 
@@ -20,8 +20,9 @@ Androiddesktop 是一个 Apache-2.0 许可的 clean-room Kotlin Android 桌面�
 | `DefaultAppIconDrawable.kt` | 代码绘制 fallback 默认图标；可解析包名优先使用系统真实应用图标。 |
 | `WirelessDebugGuide.kt` | 完整无线调试、ADB pairing/connect、授权、shell core 和验证命令导引。 |
 | `EmbeddedAppSurfaceView.kt` | SurfaceView + VirtualDisplay 会话槽，尝试通过 privileged core 启动目标 App 并转发点击。 |
-| `PrivilegedCoreClient.kt` | 与无线 ADB shell core 通信的 LocalSocket 客户端。 |
-| `PrivilegedShellCore.kt` | 可由 app_process 启动的 shell-UID core 原型，提供 launch/tap/key 命令。 |
+| `PrivilegedCoreClient.kt` | 与无线 ADB shell core 通信的 127.0.0.1 客户端，每条命令携带安装级随机令牌。 |
+| `CoreAuthTokenStore.kt` | 为特权核心生成并持久化 256-bit 随机认证令牌。 |
+| `PrivilegedShellCore.kt` | 可由 app_process 启动的 shell-UID core，认证后提供 launch/tap/key 命令。 |
 | `NiriStyleWindowManager.kt` | scrollable tiling 窗口管理模型：固定列宽、新窗口追加、焦点索引、浮动状态。 |
 | `NiriWindowMotion.kt` | 窗口入场、焦点列缩放/透明度、横向平滑滚动、pulse 动画。 |
 | `VrRuntimeDetector.kt` | VR/XR 运行时 gate：普通设备保持正常界面，VR/XR 设备切入 VR Activity。 |
@@ -54,6 +55,8 @@ Release 构建与签名：
 
 ```powershell
 cd D:\vibecoding\project\Androiddesktop
+# 仅首次或全新开发机执行；初始化后请安全备份 app/signing 下的本地签名材料
+.\command\Initialize-ReleaseSigning.ps1
 .\command\Build-Release.ps1
 ```
 
@@ -63,7 +66,7 @@ cd D:\vibecoding\project\Androiddesktop
 D:\vibecoding\release\Androiddesktop\release\Androiddesktop-release.apk
 ```
 
-`Build-Release.ps1` 默认使用临时本地签名密钥生成可安装 release APK，并在签名后删除临时密钥。生产签名可通过 `ANDROIDDESKTOP_KEYSTORE`、`ANDROIDDESKTOP_KEY_ALIAS`、`ANDROIDDESKTOP_KEYSTORE_PASS`、`ANDROIDDESKTOP_KEY_PASS` 环境变量传入；不要把 keystore 或密码提交进源码。
+首次构建前只执行一次 `.\command\Initialize-ReleaseSigning.ps1`，它会在 `app/signing/` 创建固定的 `androiddesktop-release.jks` 与 `release.local.properties`；两者都被 `.gitignore` 排除，必须一起安全备份。`Build-Release.ps1` 绝不会自动生成替代密钥：任一文件缺失会直接失败，避免版本之间随机换签。也可通过 `ANDROIDDESKTOP_KEYSTORE`、`ANDROIDDESKTOP_KEY_ALIAS`、`ANDROIDDESKTOP_KEYSTORE_PASS`、`ANDROIDDESKTOP_KEY_PASS` 显式覆盖本地签名配置。
 
 ## 原理边界
 

@@ -9,6 +9,11 @@ resource/apk/*.apk
 D:/vibecoding/release/
 release/
 
+# Stable local Release signing material (back up securely; never commit)
+app/signing/*.jks
+app/signing/*.keystore
+app/signing/*.local.properties
+
 # IDE / OS
 .idea/
 *.iml

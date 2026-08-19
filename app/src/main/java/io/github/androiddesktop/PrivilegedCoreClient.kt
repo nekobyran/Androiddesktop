@@ -1,13 +1,16 @@
 package io.github.androiddesktop
 
-import android.net.LocalSocket
-import android.net.LocalSocketAddress
+import android.content.Context
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
+import java.net.InetSocketAddress
+import java.net.Socket
 
-class PrivilegedCoreClient {
+class PrivilegedCoreClient(context: Context) {
     data class Result(val success: Boolean, val response: String)
+
+    private val authToken = CoreAuthTokenStore(context.applicationContext).ensureToken()
 
     fun ping(): Result = request("ping")
 
@@ -21,10 +24,12 @@ class PrivilegedCoreClient {
         request("key|$displayId|${keyCode.coerceAtLeast(0)}")
 
     private fun request(command: String): Result = runCatching {
-                LocalSocket().use { socket ->
-            socket.connect(LocalSocketAddress(SOCKET_NAME, LocalSocketAddress.Namespace.ABSTRACT))
+        Socket().use { socket ->
+            socket.connect(InetSocketAddress(LOOPBACK_HOST, PORT), 1500)
             socket.soTimeout = 3500
             val writer = OutputStreamWriter(socket.outputStream, Charsets.UTF_8)
+            writer.write(authToken)
+            writer.write('|'.code)
             writer.write(command)
             writer.write("\n")
             writer.flush()
@@ -40,7 +45,8 @@ class PrivilegedCoreClient {
     }
 
     companion object {
-        const val SOCKET_NAME = "androiddesktop_privileged_core_v1"
+        const val LOOPBACK_HOST = "127.0.0.1"
+        const val PORT = 38388
         private val PACKAGE_REGEX = Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+")
     }
 }
