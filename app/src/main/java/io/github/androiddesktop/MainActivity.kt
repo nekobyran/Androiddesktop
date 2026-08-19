@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Rect
 import android.os.Bundle
@@ -30,7 +31,6 @@ class MainActivity : Activity() {
     private lateinit var launcherPanel: View
     private lateinit var corePlanner: ContainerCorePlanner
     private lateinit var niriManager: NiriStyleWindowManager
-    private var vrPreview: VrSpatialPreviewView? = null
     private var windowSeq = 1
     private val columnViews = linkedMapOf<Int, View>()
 
@@ -45,6 +45,11 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (VrRuntimeDetector.shouldUseVr(this)) {
+            startActivity(Intent(this, VrDesktopActivity::class.java))
+            finish()
+            return
+        }
         corePlanner = ContainerCorePlanner(packageName)
         niriManager = NiriStyleWindowManager(dp(18), dp(340), dp(330))
         setContentView(buildDesktopShell())
@@ -88,11 +93,11 @@ class MainActivity : Activity() {
         }
         val titleBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         titleBlock.addView(text("Androiddesktop", 24f, bold = true, color = Material3Tokens.OnSurface))
-        titleBlock.addView(text("niri-like scrollable tiling · VR spatial preview · privileged core contract", 12f, color = Material3Tokens.OnSurfaceVariant))
+        titleBlock.addView(text("niri-like scrollable tiling · normal 2D desktop · privileged core contract", 12f, color = Material3Tokens.OnSurfaceVariant))
         bar.addView(titleBlock, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         bar.addView(chip("Scrollable columns"))
         bar.addView(chip("No resize on open"))
-        bar.addView(chip("VR preview"))
+        bar.addView(chip("Normal mode"))
         return bar
     }
 
@@ -130,7 +135,6 @@ class MainActivity : Activity() {
         row.addView(dockButton("启动台", "◉") { toggleLauncher() })
         row.addView(dockButton("核心", "◆") { updateConsole(corePlanner.principle()) })
         row.addView(dockButton("会话", "▤") { showCoreSessionContract() })
-        row.addView(dockButton("VR", "◎") { toggleVrPreview() })
         row.addView(dockButton("左移", "‹") { focusPreviousColumn() })
         row.addView(dockButton("右移", "›") { focusNextColumn() })
         row.addView(dockButton("脚本", "⌁") { copyCoreCommands() })
@@ -183,8 +187,7 @@ class MainActivity : Activity() {
         val grid = GridLayout(this).apply { columnCount = 3; rowCount = 2 }
         apps.forEach { app -> grid.addView(launcherTile(app), ViewGroup.LayoutParams(dp(106), dp(98))) }
         panel.addView(grid)
-        panel.addView(smallButton("显示 VR 空间预览") { toggleVrPreview(true) }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) })
-        panel.addView(smallButton("复制无线调试/核心脚本") { copyCoreCommands() }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
+        panel.addView(smallButton("复制无线调试/核心脚本") { copyCoreCommands() }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) })
         return panel
     }
 
@@ -304,34 +307,6 @@ class MainActivity : Activity() {
             columnViews[column.windowId]?.let { NiriWindowMotion.focusColumn(it, column.focused) }
         }
         NiriWindowMotion.smoothScrollTo(workspaceScroll, state.scrollX)
-        vrPreview?.setWorkspace(state)
-    }
-
-    private fun toggleVrPreview(forceVisible: Boolean? = null) {
-        val show = forceVisible ?: (vrPreview == null)
-        if (!show) {
-            vrPreview?.let { desktopLayer.removeView(it) }
-            vrPreview = null
-            updateConsole("VR spatial preview hidden. niri-like 2D scroll strip remains active.")
-            return
-        }
-        val preview = VrSpatialPreviewView(this).apply {
-            setWorkspace(niriManager.snapshot())
-            alpha = 0f
-            elevation = 32f
-            setOnClickListener { toggleVrPreview(false) }
-        }
-        vrPreview?.let { desktopLayer.removeView(it) }
-        vrPreview = preview
-        desktopLayer.addView(preview, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply {
-            leftMargin = dp(14)
-            rightMargin = dp(14)
-            topMargin = dp(14)
-            bottomMargin = dp(14)
-        })
-        preview.animate().alpha(1f).setDuration(220).start()
-        updateConsole("VR spatial preview enabled. This is a current-APK stereoscopic simulation: panels mirror niri columns; real XR/OpenXR integration remains a separate backend.")
-        toggleLauncher(false)
     }
 
     private fun toggleLauncher(forceVisible: Boolean? = null) {
@@ -458,7 +433,7 @@ class MainActivity : Activity() {
         appendLine("2. Opening a new app appends a column and does not resize existing columns.")
         appendLine("3. Focus moves by smooth horizontal scrolling plus scale/glow animations.")
         appendLine("4. Floating is a utility flag outside the main tiling model.")
-        appendLine("5. VR preview maps the same workspace into stereoscopic spatial panels.")
+        appendLine("5. VR UI is isolated in VrDesktopActivity and only opens on VR/XR-capable devices.")
         appendLine()
         append(niriManager.describe())
     }

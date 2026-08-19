@@ -1,8 +1,8 @@
 # Androiddesktop
 
-Androiddesktop 是一个 Apache-2.0 许可的 clean-room Kotlin Android 桌面容器原型。当前版本把桌面壳升级为 niri-like scrollable tiling：窗口以横向滚动列排列，新窗口追加到右侧且不重排旧窗口，焦点切换有平滑滚动、缩放和透明度动画；同时内置 VR/空间桌面预览，把同一组窗口映射成双目漂浮面板。
+Androiddesktop 是一个 Apache-2.0 许可的 clean-room Kotlin Android 桌面容器原型。当前版本把桌面壳升级为 niri-like scrollable tiling：窗口以横向滚动列排列，新窗口追加到右侧且不重排旧窗口，焦点切换有平滑滚动、缩放和透明度动画。普通手机/平板只显示正常 2D 桌面；检测到 VR/XR 设备特征时才切换到专用 VR 空间桌面 Activity。
 
-> 重要边界：普通 Android 三方 App 不能直接把任意其他应用的真实 Activity 画面嵌入自己的 View 层。本项目当前实现桌面壳、niri-like 窗口管理、VR 预览、窗口容器和特权核心命令规划；真实 App 画面嵌入需要 Shizuku、无线 ADB、root 或系统签名级别的 core 进程创建/管理显示会话并转发输入。
+> 重要边界：普通 Android 三方 App 不能直接把任意其他应用的真实 Activity 画面嵌入自己的 View 层。本项目当前实现正常 2D 桌面壳、niri-like 窗口管理、VR-only 空间桌面 Activity、窗口容器和特权核心命令规划；真实 App 画面嵌入需要 Shizuku、无线 ADB、root 或系统签名级别的 core 进程创建/管理显示会话并转发输入。
 
 ## 当前结论
 
@@ -15,10 +15,12 @@ Androiddesktop 是一个 Apache-2.0 许可的 clean-room Kotlin Android 桌面�
 
 | 文件 | 作用 |
 |---|---|
-| `MainActivity.kt` | Material 3 风格 niri-like 桌面容器 UI：Dock、启动台、横向滚动列、VR 预览、session contract、核心脚本入口。 |
+| `MainActivity.kt` | Material 3 风格 niri-like 正常 2D 桌面容器 UI：Dock、启动台、横向滚动列、session contract、核心脚本入口。 |
 | `NiriStyleWindowManager.kt` | scrollable tiling 窗口管理模型：固定列宽、新窗口追加、焦点索引、浮动状态。 |
 | `NiriWindowMotion.kt` | 窗口入场、焦点列缩放/透明度、横向平滑滚动、pulse 动画。 |
-| `VrSpatialPreviewView.kt` | 当前 APK 内置 VR/空间预览：双目画面、漂浮窗口面板、凝视准星。 |
+| `VrRuntimeDetector.kt` | VR/XR 运行时 gate：普通设备保持正常界面，VR/XR 设备切入 VR Activity。 |
+| `VrDesktopActivity.kt` | VR-only 空间桌面 Activity：双目画面、漂浮窗口面板、VR Dock、核心状态面板。 |
+| `VrSpatialPreviewView.kt` | VR 专用空间桌面渲染：双目画面、漂浮窗口面板、凝视准星。 |
 | `Material3Tokens.kt` | Material 3 风格颜色、surface、ripple、圆角 token。 |
 | `DesktopContainerModels.kt` | 桌面 App、窗口、显示模式、特权核心状态模型。 |
 | `CoreSessionContracts.kt` | 特权核心会话、显示 Surface、输入桥接和窗口生命周期契约。 |
@@ -35,7 +37,7 @@ Androiddesktop 是一个 Apache-2.0 许可的 clean-room Kotlin Android 桌面�
 3. “左移 / 右移”切换焦点列，并对 HorizontalScrollView 做平滑滚动。
 4. 焦点列使用 scale/elevation/alpha 动画突出显示。
 5. 浮动按钮当前作为 utility flag，不破坏主滚动列布局。
-6. VR 按钮打开双目空间预览，当前列被映射成漂浮 panel。
+6. 普通 2D 界面不显示 VR 入口；VR/XR 设备自动进入 VR-only 空间桌面。
 ```
 
 ## 构建
