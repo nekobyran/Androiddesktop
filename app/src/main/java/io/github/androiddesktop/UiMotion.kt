@@ -1,112 +1,119 @@
 package io.github.androiddesktop
 
+import android.animation.AnimatorListenerAdapter
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
-import android.view.MotionEvent
 import android.view.View
-import android.view.animation.AccelerateDecelerateInterpolator
-import android.view.animation.DecelerateInterpolator
-import android.view.animation.OvershootInterpolator
 import android.widget.ScrollView
 import android.widget.TextView
 
+/**
+ * Compatibility facade for older call sites.
+ *
+ * All parameters now come from [MotionTokens]; this file intentionally owns no
+ * independent duration, curve, spring, or scale constants.
+ */
 object UiMotion {
-    private val decelerate = DecelerateInterpolator()
-    private val overshoot = OvershootInterpolator(1.15f)
-    private val smooth = AccelerateDecelerateInterpolator()
-
     fun runEntrance(root: View) {
+        AppMotion.cancel(root)
+        if (AppMotion.reducedMotion(root.context)) {
+            root.alpha = 1f
+            root.translationY = 0f
+            root.scaleX = 1f
+            root.scaleY = 1f
+            return
+        }
+        val offset = dp(root, 12).toFloat()
         root.alpha = 0f
-        root.translationY = 32f
-        root.scaleX = 0.98f
-        root.scaleY = 0.98f
-        AnimatorSet().apply {
+        root.translationY = offset
+        root.scaleX = MotionTokens.SurfaceEnterScale
+        root.scaleY = MotionTokens.SurfaceEnterScale
+        val set = AnimatorSet().apply {
             playTogether(
                 ObjectAnimator.ofFloat(root, View.ALPHA, 0f, 1f),
-                ObjectAnimator.ofFloat(root, View.TRANSLATION_Y, 32f, 0f),
-                ObjectAnimator.ofFloat(root, View.SCALE_X, 0.98f, 1f),
-                ObjectAnimator.ofFloat(root, View.SCALE_Y, 0.98f, 1f)
+                ObjectAnimator.ofFloat(root, View.TRANSLATION_Y, offset, 0f),
+                ObjectAnimator.ofFloat(root, View.SCALE_X, MotionTokens.SurfaceEnterScale, 1f),
+                ObjectAnimator.ofFloat(root, View.SCALE_Y, MotionTokens.SurfaceEnterScale, 1f)
             )
-            duration = 420L
-            interpolator = decelerate
-            start()
+            duration = MotionTokens.ContentSwitchMs
+            interpolator = MotionTokens.EaseOut
         }
+        AppMotion.start(root, set)
     }
 
-    fun attachPressFeedback(view: View) {
-        view.setOnTouchListener { touched, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> animateScale(touched, 0.965f, 90L)
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> animateScale(touched, 1f, 170L)
-            }
-            false
-        }
-    }
+    fun attachPressFeedback(view: View) = AppMotion.installPressFeedback(view)
 
-    fun pulse(view: View) {
-        AnimatorSet().apply {
-            playTogether(
-                ObjectAnimator.ofFloat(view, View.SCALE_X, 1f, 1.025f, 1f),
-                ObjectAnimator.ofFloat(view, View.SCALE_Y, 1f, 1.025f, 1f),
-                ObjectAnimator.ofFloat(view, View.ALPHA, view.alpha.coerceAtLeast(0.72f), 1f)
-            )
-            duration = 360L
-            interpolator = overshoot
-            start()
-        }
-    }
+    fun pulse(view: View) = AppMotion.settlePulse(view)
 
     fun replaceText(textView: TextView, scrollView: ScrollView?, newText: String, animated: Boolean = true) {
-        if (!animated) {
+        AppMotion.cancel(textView)
+        if (!animated || AppMotion.reducedMotion(textView.context)) {
+            textView.alpha = 1f
+            textView.translationY = 0f
             textView.text = newText
             scrollView?.post { scrollView.scrollTo(0, 0) }
             return
         }
-        textView.animate().cancel()
-        textView.animate()
-            .alpha(0f)
-            .translationY(10f)
-            .setDuration(110L)
-            .setInterpolator(smooth)
-            .withEndAction {
+        val out = AnimatorSet().apply {
+            playTogether(
+                ObjectAnimator.ofFloat(textView, View.ALPHA, textView.alpha, 0f),
+                ObjectAnimator.ofFloat(textView, View.TRANSLATION_Y, textView.translationY, dp(textView, 6).toFloat())
+            )
+            duration = MotionTokens.StateMs / 2
+            interpolator = MotionTokens.EaseInOut
+        }
+        val enterOffset = -dp(textView, 6).toFloat()
+        val enter = AnimatorSet().apply {
+            playTogether(
+                ObjectAnimator.ofFloat(textView, View.ALPHA, 0f, 1f),
+                ObjectAnimator.ofFloat(textView, View.TRANSLATION_Y, enterOffset, 0f)
+            )
+            duration = MotionTokens.ContentSwitchMs - (MotionTokens.StateMs / 2)
+            interpolator = MotionTokens.EaseOut
+        }
+        out.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
                 textView.text = newText
-                textView.translationY = -8f
+                textView.translationY = enterOffset
                 scrollView?.scrollTo(0, 0)
-                textView.animate()
-                    .alpha(1f)
-                    .translationY(0f)
-                    .setDuration(180L)
-                    .setInterpolator(decelerate)
-                    .start()
             }
-            .start()
+        })
+        AppMotion.start(textView, AnimatorSet().apply { playSequentially(out, enter) })
     }
 
     fun flash(view: View) {
-        ObjectAnimator.ofFloat(view, View.ALPHA, 1f, 0.72f, 1f).apply {
-            duration = 260L
-            interpolator = smooth
-            start()
+        AppMotion.cancel(view)
+        if (AppMotion.reducedMotion(view.context)) {
+            view.alpha = 1f
+            return
         }
+        val animator = ObjectAnimator.ofFloat(view, View.ALPHA, 1f, 0.84f, 1f).apply {
+            duration = MotionTokens.StateMs
+            interpolator = MotionTokens.EaseInOut
+        }
+        AppMotion.start(view, animator)
     }
 
-    fun animateFloat(from: Float, to: Float, duration: Long, update: (Float) -> Unit) {
-        ValueAnimator.ofFloat(from, to).apply {
-            this.duration = duration
-            interpolator = decelerate
+    fun animateFloat(
+        owner: View,
+        from: Float,
+        to: Float,
+        normalMs: Long = MotionTokens.ContentSwitchMs,
+        update: (Float) -> Unit
+    ) {
+        AppMotion.cancel(owner)
+        if (AppMotion.reducedMotion(owner.context)) {
+            update(to)
+            return
+        }
+        val animator = ValueAnimator.ofFloat(from, to).apply {
+            duration = normalMs
+            interpolator = MotionTokens.EaseOut
             addUpdateListener { update(it.animatedValue as Float) }
-            start()
         }
+        AppMotion.start(owner, animator)
     }
 
-    private fun animateScale(view: View, target: Float, duration: Long) {
-        view.animate().cancel()
-        view.animate()
-            .scaleX(target)
-            .scaleY(target)
-            .setDuration(duration)
-            .setInterpolator(decelerate)
-            .start()
-    }
+    private fun dp(view: View, value: Int): Int = (value * view.resources.displayMetrics.density).toInt()
 }

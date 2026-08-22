@@ -4,7 +4,9 @@ $root = (Resolve-Path -Path (Join-Path $PSScriptRoot '..')).Path
 $env:JAVA_HOME = 'D:\vibecoding\sdk\jdk'
 $env:ANDROID_HOME = 'D:\vibecoding\sdk\android'
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+$env:GRADLE_USER_HOME = 'D:\vibecoding\sdk\gradle-home'
 $env:Path = "$env:JAVA_HOME\bin;$env:ANDROID_HOME\platform-tools;$env:ANDROID_HOME\build-tools\36.1.0;$env:Path"
+
 
 $releaseDir = 'D:\vibecoding\release\Androiddesktop\release'
 $artifactDir = Join-Path $root 'artifacts'

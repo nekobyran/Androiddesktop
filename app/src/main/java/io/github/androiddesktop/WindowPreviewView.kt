@@ -40,22 +40,11 @@ class WindowPreviewView @JvmOverloads constructor(
     private var hasKeyboard = false
     private var huaweiFamily = false
     private var freeform = false
-    private var ambientPhase = 0f
-    private var launchPulse = 0f
+        private var launchPulse = 0f
 
-        private val ambientTick = object : Runnable {
-        override fun run() {
-            ambientPhase += 0.075f
-            invalidate()
-            postDelayed(this, 48L)
-        }
-    }
-
-    init {
-        setLayerType(LAYER_TYPE_SOFTWARE, null)
-        alpha = 0f
-        postDelayed({ animate().alpha(1f).setDuration(260L).start() }, 80L)
-        post(ambientTick)
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        UiMotion.runEntrance(this)
     }
 
     fun update(snapshot: DesktopSnapshot) {
@@ -67,19 +56,20 @@ class WindowPreviewView @JvmOverloads constructor(
         invalidate()
     }
 
-    fun playRefresh() {
-        UiMotion.animateFloat(0f, 1f, 360L) {
+        fun playRefresh() {
+        UiMotion.animateFloat(this, 0f, 1f, MotionTokens.StateMs) {
             launchPulse = it * 0.35f
             invalidate()
         }
     }
 
     fun playLaunch() {
-        UiMotion.animateFloat(0f, 1f, 620L) {
+        UiMotion.animateFloat(this, 0f, 1f, MotionTokens.ContentSwitchMs) {
             launchPulse = sin(it * Math.PI).toFloat().coerceAtLeast(0f)
             invalidate()
         }
     }
+
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -103,11 +93,13 @@ class WindowPreviewView @JvmOverloads constructor(
         canvas.drawText(title, display.left + dp(16f), display.top + dp(25f), textPaint)
         canvas.drawText("displays=$displayCount  mouse=$hasMouse  keyboard=$hasKeyboard", display.left + dp(16f), display.top + dp(42f), mutedPaint)
 
-        val baseLeft = display.left + dp(20f)
+                val baseLeft = display.left + dp(20f)
         val baseTop = display.top + dp(58f)
-        val floatOffset = sin(ambientPhase.toDouble()).toFloat() * dp(3f)
+        // Static preview geometry avoids an always-on repaint loop on the desktop.
+        val floatOffset = 0f
         drawWindow(canvas, RectF(baseLeft, baseTop + floatOffset, baseLeft + w * 0.46f, baseTop + h * 0.34f + floatOffset), "Control", accentPaint)
         drawWindow(canvas, RectF(display.right - w * 0.47f, baseTop + dp(12f) - floatOffset, display.right - dp(22f), baseTop + h * 0.40f - floatOffset), "Target app", secondaryPaint)
+
 
         val chipTop = display.bottom - dp(30f)
         val chipText = if (freeform) "freeform ready" else "freeform request mode"

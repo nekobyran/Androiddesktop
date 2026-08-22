@@ -2,7 +2,11 @@ package io.github.androiddesktop
 
 import android.graphics.Rect
 
-class ContainerCorePlanner(private val hostPackageName: String) {
+class ContainerCorePlanner(
+    private val hostPackageName: String,
+    private val requestedDensityDpi: Int = 420
+) {
+
     fun principle(): String = buildString {
         appendLine("== 正确软件模型 ==")
         appendLine("目标不是把系统 App 拉到 Android 系统自由窗，而是在 Androiddesktop 内部构建一个类 Windows 桌面容器。")
@@ -22,7 +26,12 @@ class ContainerCorePlanner(private val hostPackageName: String) {
     }
 
     fun sessionBlueprint(targetPackage: String, bounds: Rect): String {
-        val request = CoreSessionRequest(targetPackage.trim().ifEmpty { "com.android.settings" }, bounds)
+                val request = CoreSessionRequest(
+            targetPackage.trim().ifEmpty { "com.android.settings" },
+            bounds,
+            requestedDensityDpi = requestedDensityDpi
+        )
+
         val descriptor = CoreSessionDescriptor(
             sessionId = "pending-${request.targetPackage.replace('.', '-')}",
             displayId = null,

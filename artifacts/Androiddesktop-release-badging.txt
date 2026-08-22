@@ -1,4 +1,4 @@
-package: name='io.github.androiddesktop' versionCode='1' versionName='0.1.0' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'
+package: name='io.github.androiddesktop' versionCode='2' versionName='0.2.0' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'
 sdkVersion:'23'
 targetSdkVersion:'36'
 uses-permission: name='android.permission.QUERY_ALL_PACKAGES'
@@ -14,6 +14,7 @@ feature-group: label=''
   uses-feature-not-required: name='android.software.freeform_window_management'
   uses-feature: name='android.hardware.screen.landscape'
   uses-implied-feature: name='android.hardware.screen.landscape' reason='one or more activities have specified a landscape orientation'
+provides-component:'launcher'
 main
 other-activities
 supports-screens: 'small' 'normal' 'large' 'xlarge'
