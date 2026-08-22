@@ -8,14 +8,18 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import android.graphics.drawable.Drawable
+import android.os.Build
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Log
 import android.view.Gravity
 
 import android.view.View
 import android.view.ViewGroup
-import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -31,13 +35,17 @@ import android.widget.Toast
 
 class MainActivity : Activity() {
     private lateinit var rootLayer: FrameLayout
+    private lateinit var shellContent: LinearLayout
     private lateinit var desktopLayer: FrameLayout
     private lateinit var workspaceScroll: HorizontalScrollView
     private lateinit var columnStrip: LinearLayout
-        private lateinit var console: TextView
+    private lateinit var console: TextView
     private lateinit var consolePanel: View
-    private lateinit var packageInput: EditText
-        private lateinit var launcherPanel: View
+    private lateinit var launcherPanel: View
+    private lateinit var launcherGrid: GridLayout
+    private lateinit var launcherSearchInput: EditText
+    private lateinit var launcherCountView: TextView
+    private lateinit var dockAppsRow: LinearLayout
     private lateinit var toolsPanel: View
     private lateinit var scalePanel: View
     private lateinit var scaleValueView: TextView
@@ -46,30 +54,18 @@ class MainActivity : Activity() {
     private lateinit var homeStatusChip: TextView
     private val homeRoleRequestCode = 4102
     private val layoutMetrics by lazy { AdaptiveDesktopMetrics.from(this) }
+    private val onboardingPrefs by lazy { getSharedPreferences("androiddesktop.onboarding", Context.MODE_PRIVATE) }
     private var lastConsoleText = ""
-
+    private var lastTargetPackage = "com.android.settings"
 
     private lateinit var corePlanner: ContainerCorePlanner
     private lateinit var niriManager: NiriStyleWindowManager
     private lateinit var multiWindowLauncher: MultiWindowLauncher
     private var windowSeq = 1
-        private val columnViews = linkedMapOf<Int, View>()
+    private val columnViews = linkedMapOf<Int, View>()
+    private val windowApps = linkedMapOf<Int, DesktopApp>()
     private val embeddedSessions = linkedMapOf<Int, EmbeddedAppSurfaceView>()
     private val iconCache = linkedMapOf<String, Drawable>()
-
-
-        private val apps by lazy {
-                listOf(
-            DesktopApp("设置", resolveLauncherPackage("com.android.settings"), "⚙", "系统设置，基础承载基线"),
-            DesktopApp("番茄小说", resolveLauncherPackage("com.dragon.read"), "阅", "阅读类主基准：长列表、图片、文字与持续交互"),
-            DesktopApp("华为阅读", resolveLauncherPackage("com.huawei.hwread.dz", "com.huawei.hwireader"), "书", "设备原生阅读类对照基准"),
-            DesktopApp("文件", resolveLauncherPackage("com.huawei.filemanager", "com.google.android.documentsui", "com.android.documentsui"), "▣", "真实文件管理器多窗口基准"),
-            DesktopApp("浏览器", resolveLauncherPackage("com.huawei.browser", "com.android.chrome"), "◎", "网页滚动与复杂绘制基准"),
-            DesktopApp("图库", resolveLauncherPackage("com.huawei.photos", "com.android.gallery3d", "com.google.android.apps.photos"), "◧", "图片内容与手势基准"),
-            DesktopApp("计算器", resolveLauncherPackage("com.huawei.calculator", "com.android.calculator2", "com.google.android.calculator"), "＋", "轻量对照基准"),
-            DesktopApp("自定义", "", "+", "使用下方输入的包名")
-        )
-    }
 
             override fun attachBaseContext(newBase: Context) {
         val wrapped = GlobalUiScale.wrap(newBase)
@@ -95,9 +91,13 @@ class MainActivity : Activity() {
         niriManager = NiriStyleWindowManager(dp(18), dp(340), dp(330))
         multiWindowLauncher = MultiWindowLauncher(this)
         setContentView(buildDesktopShell())
+        updateConsole(buildNiriIntro())
         desktopLayer.post {
-            addWindow(apps.first(), DisplayMode.PrivilegedVirtualDisplay, "VirtualDisplay + SurfaceView 会话；优先使用无线 ADB shell core 启动并转发输入。")
-            updateConsole(buildNiriIntro())
+            if (!wirelessSetupComplete()) {
+                showWirelessDebugGuide(required = true)
+            } else {
+                restoreWirelessCore()
+            }
         }
     }
 
@@ -113,6 +113,7 @@ class MainActivity : Activity() {
                 dp(layoutMetrics.outerVerticalDp)
             )
         }
+        shellContent = main
 
         root.addView(main, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         main.addView(buildTopBar())
@@ -150,6 +151,11 @@ class MainActivity : Activity() {
                                 text("Androiddesktop · 桌面容器", layoutMetrics.topTitleSp, bold = true, color = Material3Tokens.OnSurface),
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             )
+            bar.addView(chip("工具").apply {
+                contentDescription = "androiddesktop-top-tools"
+                AppMotion.installPressFeedback(this)
+                setOnClickListener { toggleToolsPanel() }
+            })
             val status = HomeRoleController.status(this)
             homeStatusChip = chip(if (status.isDefaultHome) "⌂ ✓" else "⌂").apply {
                 background = Material3Tokens.ripple(Material3Tokens.TertiaryContainer, dp(14))
@@ -167,8 +173,16 @@ class MainActivity : Activity() {
             titleBlock.addView(text("Androiddesktop", layoutMetrics.topTitleSp, bold = true, color = Material3Tokens.OnSurface))
                         titleBlock.addView(text("桌面容器 · 50%–125% 全局缩放（当前 ${GlobalUiScale.percent(this)}%）· 无线调试 · 可设为主屏幕", 9f, color = Material3Tokens.OnSurfaceVariant))
             bar.addView(titleBlock, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            bar.addView(chip("Scrollable columns"))
-            bar.addView(chip("No resize on open"))
+            bar.addView(chip("工具").apply {
+                contentDescription = "androiddesktop-top-tools"
+                AppMotion.installPressFeedback(this)
+                setOnClickListener { toggleToolsPanel() }
+            })
+            bar.addView(chip("缩放").apply {
+                contentDescription = "androiddesktop-top-scale"
+                AppMotion.installPressFeedback(this)
+                setOnClickListener { toggleScalePanel() }
+            })
             homeStatusChip = chip(HomeRoleController.status(this).compactLabel).apply {
                 background = Material3Tokens.ripple(Material3Tokens.TertiaryContainer, dp(14))
                 contentDescription = "设置 Androiddesktop 为桌面主屏幕应用"
@@ -202,109 +216,194 @@ class MainActivity : Activity() {
         return workspaceScroll
     }
 
-        private fun buildDock(): View {
+    private fun buildDock(): View {
+        val holder = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
+        }
+        holder.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(layoutMetrics.dockHeightDp + 16)
+        )
+
         val scroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
-            background = Material3Tokens.surface(Material3Tokens.SurfaceContainer, dp(24), Color.argb(64, 255, 255, 255), 1)
-            setPadding(dp(if (layoutMetrics.compactPhone) 3 else 4), dp(3), dp(if (layoutMetrics.compactPhone) 3 else 4), dp(3))
+            overScrollMode = View.OVER_SCROLL_NEVER
+            background = Material3Tokens.surface(
+                Color.argb(224, 31, 35, 41),
+                dp(24),
+                Color.argb(82, 255, 255, 255),
+                1
+            )
+            setPadding(dp(4), dp(3), dp(4), dp(3))
         }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        scroll.addView(row)
         row.addView(dockButton("启动台", "◉") { toggleLauncher() })
-        if (layoutMetrics.compactPhone) {
-                        row.addView(dockButton("左移", "‹") { focusPreviousColumn() })
-            row.addView(dockButton("右移", "›") { focusNextColumn() })
-            row.addView(dockButton("缩放", "↕") { toggleScalePanel() })
-            row.addView(dockButton("工具", "⋯") { toggleToolsPanel() })
-
-            listOfNotNull(apps.getOrNull(0), apps.getOrNull(1), apps.getOrNull(3)).forEach { app ->
-                row.addView(appDockButton(app) { addWindow(app, DisplayMode.PrivilegedVirtualDisplay, "从紧凑 Dock 追加到 niri-like 横向滚动列。") })
-            }
-        } else {
-            row.addView(dockButton("核心", "◆") { showDiagnosticConsole(corePlanner.principle()) })
-            row.addView(dockButton("会话", "▤") { showCoreSessionContract(); showDiagnosticConsole() })
-                        row.addView(dockButton("性能", "⌁") { showPerformanceSnapshot(); showDiagnosticConsole() })
-            row.addView(dockButton("缩放", "↕") { toggleScalePanel() })
-            row.addView(dockButton("无线导引", "⇄") { showWirelessDebugGuide() })
-
-            row.addView(dockButton("设为桌面", "⌂") { requestHomeRole() })
-            row.addView(dockButton("左移", "‹") { focusPreviousColumn() })
-            row.addView(dockButton("右移", "›") { focusNextColumn() })
-            row.addView(dockButton("脚本", "⌁") { copyCoreCommands() })
-            apps.take(5).forEach { app ->
-                row.addView(appDockButton(app) { addWindow(app, DisplayMode.PrivilegedVirtualDisplay, "追加到 niri-like 横向滚动列。") })
-            }
+        dockAppsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-        return scroll
+        row.addView(dockAppsRow)
+        scroll.addView(row)
+        holder.addView(
+            scroll,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(layoutMetrics.dockHeightDp + 6), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                bottomMargin = dp(10)
+            }
+        )
+        return holder
     }
 
+    private fun refreshDockApps() {
+        if (!::dockAppsRow.isInitialized) return
+        dockAppsRow.removeAllViews()
+        val running = windowApps.values
+            .filter { it.packageName.isNotBlank() }
+            .distinctBy { it.packageName }
+        running.forEach { app ->
+            dockAppsRow.addView(appDockButton(app) {
+                val id = windowApps.entries.lastOrNull { it.value.packageName == app.packageName }?.key
+                if (id != null && columnViews.containsKey(id)) focusColumn(id)
+            })
+        }
+    }
 
     private fun buildLauncherPanel(): View {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
             alpha = 0f
-                        background = Material3Tokens.surface(Material3Tokens.SurfaceContainerHigh, dp(28), Color.argb(70, 255, 255, 255), 1)
+            setBackgroundColor(Color.argb(218, 8, 12, 20))
             setPadding(
-                dp(layoutMetrics.launcherPaddingDp),
-                dp(layoutMetrics.launcherPaddingDp),
-                dp(layoutMetrics.launcherPaddingDp),
-                dp(layoutMetrics.launcherPaddingDp)
+                dp(if (layoutMetrics.compactPhone) 28 else 54),
+                dp(if (layoutMetrics.compactPhone) 18 else 34),
+                dp(if (layoutMetrics.compactPhone) 28 else 54),
+                dp(if (layoutMetrics.compactPhone) 20 else 38)
             )
-            elevation = 18f
+            isClickable = true
+            elevation = dp(30).toFloat()
         }
-        panel.layoutParams = FrameLayout.LayoutParams(dp(layoutMetrics.launcherWidthDp), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.START).apply {
-            leftMargin = dp(if (layoutMetrics.compactPhone) 8 else 20)
-            bottomMargin = dp(if (layoutMetrics.compactPhone) 52 else 64)
-        }
+        panel.layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            Gravity.CENTER
+        )
 
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-                header.addView(text("启动台", if (layoutMetrics.compactPhone) 17f else 20f, bold = true, color = Material3Tokens.OnSurface), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-
+        val titleBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        titleBlock.addView(text("启动台", if (layoutMetrics.compactPhone) 24f else 30f, bold = true, color = Color.WHITE))
+        launcherCountView = text("正在读取系统应用…", if (layoutMetrics.compactPhone) 10f else 12f, color = Color.argb(196, 255, 255, 255))
+        titleBlock.addView(launcherCountView)
+        header.addView(titleBlock, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(smallButton("关闭") { toggleLauncher(false) })
         panel.addView(header)
-        packageInput = EditText(this).apply {
-            hint = "输入目标包名，例如 com.android.settings"
+
+        launcherSearchInput = EditText(this).apply {
+            hint = "搜索应用"
             setSingleLine(true)
-            imeOptions = EditorInfo.IME_ACTION_GO
-            setText("com.android.settings")
-            setTextColor(Material3Tokens.OnSurface)
-            setHintTextColor(Material3Tokens.OnSurfaceVariant)
-            background = Material3Tokens.surface(Material3Tokens.Surface, dp(18), Material3Tokens.Outline, 1)
-                        setPadding(dp(if (layoutMetrics.compactPhone) 10 else 14), dp(if (layoutMetrics.compactPhone) 7 else 10), dp(if (layoutMetrics.compactPhone) 10 else 14), dp(if (layoutMetrics.compactPhone) 7 else 10))
-
-            setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == EditorInfo.IME_ACTION_GO) {
-                    addCustomWindow()
-                    true
-                } else false
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.argb(164, 255, 255, 255))
+            background = Material3Tokens.surface(Color.argb(152, 42, 47, 58), dp(22), Color.argb(72, 255, 255, 255), 1)
+            setPadding(dp(16), dp(9), dp(16), dp(9))
+            contentDescription = "androiddesktop-launchpad-search"
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    refreshLauncherApps(s?.toString().orEmpty())
+                }
+                override fun afterTextChanged(s: Editable?) = Unit
+            })
+        }
+        panel.addView(
+            launcherSearchInput,
+            LinearLayout.LayoutParams(dp(if (layoutMetrics.compactPhone) 330 else 430), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                topMargin = dp(8)
+                bottomMargin = dp(10)
             }
-        }
-                panel.addView(packageInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = dp(if (layoutMetrics.compactPhone) 8 else 14)
-            bottomMargin = dp(if (layoutMetrics.compactPhone) 8 else 12)
-        })
-        val grid = GridLayout(this).apply { columnCount = 4; rowCount = (apps.size + 3) / 4 }
-        apps.forEach { app ->
-            grid.addView(
-                launcherTile(app),
-                ViewGroup.LayoutParams(dp(layoutMetrics.launcherTileWidthDp), dp(layoutMetrics.launcherTileHeightDp))
-            )
-        }
+        )
 
-        panel.addView(grid)
-        panel.addView(smallButton("复制无线调试/核心脚本") { copyCoreCommands() }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(if (layoutMetrics.compactPhone) 8 else 12) })
-
+                launcherGrid = GridLayout(this).apply {
+            columnCount = launcherColumnCount()
+            alignmentMode = GridLayout.ALIGN_BOUNDS
+            useDefaultMargins = false
+        }
+        val gridScroll = ScrollView(this).apply {
+            isFillViewport = false
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            addView(launcherGrid, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        panel.addView(gridScroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        panel.addView(
+            text("来自 Android PackageManager 的真实可启动 Activity · 点击后创建真实 VirtualDisplay 会话", if (layoutMetrics.compactPhone) 9f else 10.5f, color = Color.argb(176, 255, 255, 255)).apply {
+                gravity = Gravity.CENTER
+            },
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6) }
+        )
         return panel
     }
 
-        private fun ensureLauncherPanel() {
+    private fun launcherColumnCount(): Int {
+        val width = resources.configuration.screenWidthDp
+        return when {
+            width >= 1200 -> 9
+            width >= 1000 -> 8
+            width >= 780 -> 7
+            else -> 6
+        }
+    }
+
+    private fun launcherTileWidthDp(): Int {
+        val columns = launcherColumnCount()
+        val width = resources.configuration.screenWidthDp - if (layoutMetrics.compactPhone) 72 else 126
+        return (width / columns).coerceIn(82, 132)
+    }
+
+    private fun queryLaunchableApps(): List<DesktopApp> {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        @Suppress("DEPRECATION")
+        val resolved = packageManager.queryIntentActivities(intent, 0)
+        return resolved.asSequence()
+            .filter { it.activityInfo?.packageName?.isNotBlank() == true }
+            .filter { it.activityInfo.packageName != packageName }
+            .distinctBy { it.activityInfo.packageName }
+            .map { info ->
+                val pkg = info.activityInfo.packageName
+                val label = runCatching { info.loadLabel(packageManager).toString().trim() }
+                    .getOrNull().orEmpty().ifBlank { pkg.substringAfterLast('.') }
+                val glyph = label.firstOrNull()?.toString() ?: "●"
+                DesktopApp(label, pkg, glyph, pkg)
+            }
+            .sortedBy { it.label.lowercase() }
+            .toList()
+    }
+
+    private fun refreshLauncherApps(query: String = "") {
+        if (!::launcherGrid.isInitialized) return
+        val allApps = queryLaunchableApps()
+        val normalized = query.trim().lowercase()
+        val apps = if (normalized.isEmpty()) allApps else allApps.filter {
+            it.label.lowercase().contains(normalized) || it.packageName.lowercase().contains(normalized)
+        }
+        launcherGrid.removeAllViews()
+        launcherGrid.columnCount = launcherColumnCount()
+        val tileWidth = dp(launcherTileWidthDp())
+        val tileHeight = dp(if (layoutMetrics.compactPhone) 82 else 104)
+        apps.forEach { app ->
+            launcherGrid.addView(launcherTile(app), ViewGroup.LayoutParams(tileWidth, tileHeight))
+        }
+        if (::launcherCountView.isInitialized) {
+            launcherCountView.text = if (normalized.isEmpty()) "${allApps.size} 个可启动应用" else "${apps.size} / ${allApps.size} 个应用"
+        }
+    }
+
+    private fun ensureLauncherPanel() {
         if (::launcherPanel.isInitialized) return
         launcherPanel = buildLauncherPanel()
         rootLayer.addView(launcherPanel)
@@ -535,15 +634,16 @@ class MainActivity : Activity() {
     }
 
     private fun buildWirelessGuidePanel(): WirelessDebugGuidePanel = WirelessDebugGuidePanel(
-
         host = this,
         hostPackage = packageName,
-        targetPackageProvider = {
-            if (::packageInput.isInitialized) packageInput.text.toString().trim().ifEmpty { "com.dragon.read" } else "com.dragon.read"
-        },
+        targetPackageProvider = { lastTargetPackage },
         sessionSummaryProvider = { sessionSummary() },
         onClose = { toggleWirelessGuide(false) },
-                onMessage = { updateConsole(it) }
+        onSetupComplete = {
+            onboardingPrefs.edit().putBoolean("wireless_pairing_complete_v1", true).apply()
+            updateConsole("无线调试已完成本机配对，shell core 已就绪。")
+        },
+        onMessage = { updateConsole(it) }
     )
 
     private fun ensureWirelessGuidePanel() {
@@ -552,23 +652,21 @@ class MainActivity : Activity() {
         rootLayer.addView(wirelessGuidePanel)
     }
 
-    private fun addCustomWindow() {
-        val pkg = packageInput.text.toString().trim().ifEmpty { "com.android.settings" }
-        addWindow(DesktopApp("自定义", pkg, "+", "用户输入目标包"), DisplayMode.PrivilegedVirtualDisplay, "等待特权核心把 $pkg 启动到容器显示会话。")
-        toggleLauncher(false)
-    }
-
     private fun addWindow(app: DesktopApp, mode: DisplayMode, note: String) {
+        if (app.packageName.isBlank()) return
+        lastTargetPackage = app.packageName
         val id = windowSeq++
         val state = niriManager.addWindow(id, app)
         val bounds = state.focusedColumn?.bounds ?: Rect(0, 0, dp(340), dp(330))
         val window = DesktopWindow(id, app, bounds, mode, note)
         val view = buildColumnView(window)
         columnViews[id] = view
+        windowApps[id] = app
         columnStrip.addView(view)
+        refreshDockApps()
         NiriWindowMotion.enterColumn(view)
         applyWorkspaceState(state)
-        updateConsole(corePlanner.sessionBlueprint(app.packageName.ifEmpty { packageInput.text.toString() }, bounds) + "\n" + niriManager.describe())
+        updateConsole(corePlanner.sessionBlueprint(app.packageName, bounds) + "\n" + niriManager.describe())
         toggleLauncher(false)
     }
 
@@ -596,11 +694,11 @@ class MainActivity : Activity() {
         title.addView(text("${window.app.glyph}  ${window.app.label}", 13f, bold = true, color = Material3Tokens.OnSurface), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         title.addView(windowAction("▤") {
             focusColumn(window.id)
-            updateConsole(corePlanner.sessionBlueprint(window.app.packageName.ifEmpty { packageInput.text.toString() }, window.bounds))
+            updateConsole(corePlanner.sessionBlueprint(window.app.packageName, window.bounds))
         })
         title.addView(windowAction("⌁") {
             focusColumn(window.id)
-            val commands = corePlanner.coreLaunchScript(window.app.packageName.ifEmpty { packageInput.text.toString() }, window.bounds)
+            val commands = corePlanner.coreLaunchScript(window.app.packageName, window.bounds)
             copyText("Androiddesktop core bootstrap", commands)
             updateConsole(commands)
         })
@@ -659,9 +757,11 @@ class MainActivity : Activity() {
         updateConsole(niriManager.describe())
     }
 
-        private fun removeColumn(id: Int) {
+    private fun removeColumn(id: Int) {
         embeddedSessions.remove(id)?.releaseSession()
         columnViews.remove(id)?.let { columnStrip.removeView(it) }
+        windowApps.remove(id)
+        refreshDockApps()
         applyWorkspaceState(niriManager.removeWindow(id))
         updateConsole(niriManager.describe())
     }
@@ -690,23 +790,38 @@ class MainActivity : Activity() {
         NiriWindowMotion.smoothScrollTo(workspaceScroll, state.scrollX)
     }
 
-                private fun toggleLauncher(forceVisible: Boolean? = null) {
+    private fun toggleLauncher(forceVisible: Boolean? = null) {
         val currentlyVisible = ::launcherPanel.isInitialized && launcherPanel.visibility == View.VISIBLE
         val show = forceVisible ?: !currentlyVisible
         if (show) {
             ensureLauncherPanel()
             toggleToolsPanel(false)
+            toggleScalePanel(false)
             toggleConsolePanel(false)
-            launcherPanel.post { AppMotion.showPopover(launcherPanel, fromBottomStart = true) }
+            refreshLauncherApps(launcherSearchInput.text?.toString().orEmpty())
+            applyLauncherBlur(true)
+            launcherPanel.post { AppMotion.showLaunchpad(launcherPanel) }
         } else if (currentlyVisible) {
-            AppMotion.hidePopover(launcherPanel) { }
+            AppMotion.hideLaunchpad(launcherPanel) { applyLauncherBlur(false) }
+        } else if (!show) {
+            applyLauncherBlur(false)
         }
+    }
+
+    private fun applyLauncherBlur(enabled: Boolean) {
+        if (!::shellContent.isInitialized) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            shellContent.setRenderEffect(
+                if (enabled) RenderEffect.createBlurEffect(dp(18).toFloat(), dp(18).toFloat(), Shader.TileMode.CLAMP) else null
+            )
+        }
+        shellContent.alpha = if (enabled) 0.84f else 1f
     }
 
 
 
     private fun showCoreSessionContract() {
-        val targetPackage = if (::packageInput.isInitialized) packageInput.text.toString() else "com.android.settings"
+        val targetPackage = lastTargetPackage
         updateConsole(corePlanner.sessionBlueprint(targetPackage, Rect(dp(80), dp(80), dp(920), dp(720))) + "\n" + niriManager.describe())
     }
 
@@ -768,31 +883,54 @@ class MainActivity : Activity() {
 
     private fun copyCoreCommands() {
 
-        val targetPackage = if (::packageInput.isInitialized) packageInput.text.toString() else "com.android.settings"
+        val targetPackage = lastTargetPackage
         val commands = corePlanner.coreLaunchScript(targetPackage, Rect(dp(80), dp(80), dp(920), dp(720)))
         copyText("Androiddesktop privileged core bootstrap", commands)
         updateConsole(commands)
         Toast.makeText(this, "无线调试/核心脚本已复制", Toast.LENGTH_SHORT).show()
     }
 
-                private fun showWirelessDebugGuide() {
+    private fun showWirelessDebugGuide(required: Boolean = false) {
         ensureWirelessGuidePanel()
+        wirelessGuidePanel.setRequiredSetup(required)
         wirelessGuidePanel.refreshStatus()
-        updateConsole("无线调试向导已打开：按 1→5 完成设备侧设置、电脑配对、认证 core 和真实 VirtualDisplay 验证。普通 APK 只能引导/检测，不能自行绕过系统授权开启无线调试。")
+        updateConsole(
+            if (required) {
+                "首次启动：请完成无线调试系统开关、六位码本机配对与 shell core 启动。系统无线调试开关必须由用户亲自确认。"
+            } else {
+                "无线调试配对已打开：Androiddesktop 会在设备内完成 mDNS 发现、TLS 配对、ADB 连接与 shell core 启动。"
+            }
+        )
         toggleWirelessGuide(true)
     }
 
     private fun toggleWirelessGuide(show: Boolean) {
-                if (show) {
+        if (show) {
             ensureWirelessGuidePanel()
             toggleLauncher(false)
             toggleToolsPanel(false)
             toggleConsolePanel(false)
             wirelessGuidePanel.refreshStatus()
             wirelessGuidePanel.post { AppMotion.showModal(wirelessGuidePanel) }
-
         } else if (::wirelessGuidePanel.isInitialized && wirelessGuidePanel.visibility == View.VISIBLE) {
             AppMotion.hideModal(wirelessGuidePanel) { }
+        }
+    }
+
+    private fun wirelessSetupComplete(): Boolean =
+        onboardingPrefs.getBoolean("wireless_pairing_complete_v1", false)
+
+    private fun restoreWirelessCore() {
+        CoreIoDispatcher.execute {
+            val token = runCatching { CoreAuthTokenStore(this).ensureToken() }.getOrNull()
+            val result = if (token != null) AndroidAdbBridge.get(this).bootstrapCore(packageName, token) else null
+            runOnUiThread {
+                if (result?.coreStarted == true) {
+                    updateConsole("${buildNiriIntro()}\n\n无线 ADB 已自动恢复，shell core 已就绪。")
+                } else if (result != null) {
+                    updateConsole("${buildNiriIntro()}\n\n无线 ADB 自动恢复未完成：${result.message}")
+                }
+            }
         }
     }
 
@@ -883,28 +1021,23 @@ class MainActivity : Activity() {
 
 
 
-        private fun launcherTile(app: DesktopApp): View {
+    private fun launcherTile(app: DesktopApp): View {
         val tile = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(
-                dp(if (layoutMetrics.compactPhone) 5 else 8),
-                dp(if (layoutMetrics.compactPhone) 4 else 8),
-                dp(if (layoutMetrics.compactPhone) 5 else 8),
-                dp(if (layoutMetrics.compactPhone) 4 else 8)
-            )
-            background = Material3Tokens.ripple(Material3Tokens.Surface, dp(22))
+            setPadding(dp(6), dp(5), dp(6), dp(5))
+            background = Material3Tokens.ripple(Color.argb(46, 255, 255, 255), dp(24))
+            contentDescription = "启动 ${app.label}"
             AppMotion.installPressFeedback(this)
             setOnClickListener {
-                if (app.packageName.isEmpty()) addCustomWindow() else addWindow(app, DisplayMode.PrivilegedVirtualDisplay, "从启动台追加到 niri-like 列。")
-                toggleLauncher(false)
+                addWindow(app, DisplayMode.PrivilegedVirtualDisplay, "从真实启动台创建 VirtualDisplay 会话。")
             }
         }
-        tile.addView(iconView(app, layoutMetrics.launcherIconDp))
-        tile.addView(text(app.label, if (layoutMetrics.compactPhone) 10.5f else 12f, bold = true, color = Material3Tokens.OnSurface).apply { gravity = Gravity.CENTER })
-        if (!layoutMetrics.compactPhone) {
-            tile.addView(text(app.description, 9f, color = Material3Tokens.OnSurfaceVariant).apply { gravity = Gravity.CENTER })
-        }
+        tile.addView(iconView(app, if (layoutMetrics.compactPhone) 44 else 58))
+        tile.addView(text(app.label, if (layoutMetrics.compactPhone) 10f else 11.5f, bold = true, color = Color.WHITE).apply {
+            gravity = Gravity.CENTER
+            maxLines = 1
+        })
         return tile
     }
 
@@ -1053,8 +1186,8 @@ class MainActivity : Activity() {
         appendLine("3. Focus moves by smooth horizontal scrolling plus scale/glow animations.")
         appendLine("4. Floating is a utility flag outside the main tiling model.")
         appendLine("5. VR UI is isolated in VrDesktopActivity and only opens on VR/XR-capable devices.")
-        appendLine("6. Default wallpaper and fallback app icons are drawn locally; no external assets are bundled.")
-        appendLine("7. Wireless debugging guide is available from the Dock and copied for adb execution.")
+        appendLine("6. Launchpad reads real launcher activities from PackageManager; Dock only mirrors currently open app windows.")
+        appendLine("7. Wireless debugging pairs locally inside Androiddesktop; the user only confirms Android's system Wireless debugging UI.")
         appendLine()
                 append(niriManager.describe())
     }
@@ -1062,6 +1195,9 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         refreshHomeRoleStatus()
+        if (::wirelessGuidePanel.isInitialized && wirelessGuidePanel.visibility == View.VISIBLE) {
+            wirelessGuidePanel.refreshStatus()
+        }
     }
 
     @Deprecated("Legacy Activity result callback is required for the platform RoleManager consent intent.")

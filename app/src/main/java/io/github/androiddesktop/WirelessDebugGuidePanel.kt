@@ -6,10 +6,13 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Rect
+import android.os.Build
 import android.provider.Settings
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -17,10 +20,12 @@ import android.widget.TextView
 import android.widget.Toast
 
 /**
- * In-app, executable wireless-debugging onboarding. The guide does not merely
- * show a shell script: it exposes device-side steps, opens the relevant system
- * settings, checks observable state, authenticates the privileged core, and
- * keeps the exact ADB commands available for the desktop side.
+ * First-class, device-local wireless ADB onboarding.
+ *
+ * The Android security boundary is preserved: the user explicitly enables Wireless debugging and
+ * opens "Pair device with pairing code" in system Settings. Androiddesktop then discovers the
+ * local TLS pairing service through mDNS, accepts the six-digit code inside the app, pairs with the
+ * device adbd, reconnects locally and starts the existing shell-UID core without requiring a PC.
  */
 class WirelessDebugGuidePanel(
     private val host: Context,
@@ -28,85 +33,110 @@ class WirelessDebugGuidePanel(
     private val targetPackageProvider: () -> String,
     private val sessionSummaryProvider: () -> String,
     private val onClose: () -> Unit,
+    private val onSetupComplete: () -> Unit,
     private val onMessage: (String) -> Unit
 ) : LinearLayout(host) {
 
-        private val statusViews = linkedMapOf<String, TextView>()
+    private val bridge = AndroidAdbBridge.get(host)
+    private val statusViews = linkedMapOf<String, TextView>()
     private val summaryView = TextView(host)
-    private val commandView = TextView(host)
+    private val pairingServiceView = TextView(host)
+    private val pairingCodeInput = EditText(host)
+    private val pairingPortInput = EditText(host)
+    private val pairButton: Button
+    private val discoverButton: Button
+    private val bootstrapButton: Button
+    private val closeButton: Button
     private val compactPhone = resources.configuration.screenHeightDp < 600
 
+    @Volatile
+    private var discoveredEndpoint: AndroidAdbBridge.PairingEndpoint? = null
+    private var requiredSetup = false
+    private var setupComplete = false
 
     init {
         orientation = VERTICAL
         visibility = View.GONE
         alpha = 0f
         background = Material3Tokens.surface(
-            Material3Tokens.SurfaceContainerHigh,
+            Color.argb(250, 16, 20, 28),
             dp(28),
-            Color.argb(92, 255, 255, 255),
+            Color.argb(70, 255, 255, 255),
             1
         )
-                setPadding(
-            dp(if (compactPhone) 12 else 18),
-            dp(if (compactPhone) 10 else 16),
-            dp(if (compactPhone) 12 else 18),
-            dp(if (compactPhone) 10 else 16)
+        setPadding(
+            dp(if (compactPhone) 18 else 30),
+            dp(if (compactPhone) 14 else 24),
+            dp(if (compactPhone) 18 else 30),
+            dp(if (compactPhone) 14 else 24)
         )
-        elevation = dp(16).toFloat()
+        elevation = dp(24).toFloat()
         layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT,
             Gravity.CENTER
         ).apply {
-            leftMargin = dp(if (compactPhone) 12 else 36)
-            rightMargin = dp(if (compactPhone) 12 else 36)
-            topMargin = dp(if (compactPhone) 8 else 28)
-            bottomMargin = dp(if (compactPhone) 8 else 28)
+            leftMargin = dp(if (compactPhone) 18 else 54)
+            rightMargin = dp(if (compactPhone) 18 else 54)
+            topMargin = dp(if (compactPhone) 10 else 30)
+            bottomMargin = dp(if (compactPhone) 10 else 30)
         }
-
 
         val header = LinearLayout(host).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-                header.addView(label("无线调试与特权核心", if (compactPhone) 18f else 22f, bold = true), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
-
+        header.addView(
+            label("无线调试配对", if (compactPhone) 19f else 24f, bold = true),
+            LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
+        )
         header.addView(actionButton("重新检测") { refreshStatus() })
-        header.addView(actionButton("复制全部") { copyAllGuide() }, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) })
-        header.addView(actionButton("关闭") { onClose() }, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) })
+        closeButton = actionButton("关闭") { if (!requiredSetup || setupComplete) onClose() }
+        header.addView(closeButton, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+            leftMargin = dp(8)
+        })
         addView(header)
 
-                summaryView.apply {
+        val intro = LinearLayout(host).apply {
+            orientation = VERTICAL
+            background = Material3Tokens.surface(
+                Color.argb(235, 65, 73, 110),
+                dp(22),
+                Color.argb(54, 255, 255, 255),
+                1
+            )
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+        }
+        intro.addView(label("Androiddesktop 会在本机完成 ADB TLS 配对", if (compactPhone) 12f else 14f, bold = true))
+        intro.addView(label(
+            "你仍需亲自开启系统“无线调试”并点“使用配对码配对设备”。之后保持系统配对弹窗打开，把六位代码输入这里即可；不需要电脑执行 adb pair。",
+            if (compactPhone) 10f else 12f,
+            bold = false
+        ).apply { setPadding(0, dp(4), 0, 0) })
+        addView(intro, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(10)
+        })
+
+        summaryView.apply {
             textSize = if (compactPhone) 10.5f else 12f
             setTextColor(Material3Tokens.OnSurfaceVariant)
-            setPadding(0, dp(if (compactPhone) 4 else 6), 0, dp(if (compactPhone) 6 else 10))
+            setPadding(0, dp(8), 0, dp(8))
         }
-
         addView(summaryView)
 
-        val contentRow = LinearLayout(host).apply {
-            orientation = HORIZONTAL
-            gravity = Gravity.TOP
-        }
-        addView(contentRow, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-
-                val steps = LinearLayout(host).apply {
+        val contentScroll = ScrollView(host).apply { isFillViewport = false }
+        val steps = LinearLayout(host).apply {
             orientation = VERTICAL
-            setPadding(0, 0, dp(if (compactPhone) 8 else 12), 0)
+            setPadding(0, 0, 0, dp(12))
         }
-
-        val stepsScroll = ScrollView(host).apply {
-            isFillViewport = true
-            addView(steps)
-        }
-        contentRow.addView(stepsScroll, LayoutParams(0, LayoutParams.MATCH_PARENT, 0.45f))
+        contentScroll.addView(steps)
+        addView(contentScroll, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
 
         steps.addView(stepCard(
             key = "developer",
             number = "1",
             title = "开启开发者选项",
-            description = "设置 → 关于手机 → 连续点击版本号，然后回到系统设置进入开发者选项。",
+            description = "如果开发者选项尚未开启，先在系统“关于手机”连续点击版本号，然后进入开发者选项。",
             action = "打开开发者选项"
         ) { openSettings(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS) })
 
@@ -114,84 +144,266 @@ class WirelessDebugGuidePanel(
             key = "wireless",
             number = "2",
             title = "开启无线调试",
-            description = "在开发者选项中开启无线调试，手机与电脑保持在同一局域网。",
+            description = "打开系统“无线调试”。这是 Android 的安全开关，普通应用不能静默替你开启。",
             action = "打开无线调试"
         ) { openSettings("android.settings.WIRELESS_DEBUGGING_SETTINGS") })
 
-        steps.addView(stepCard(
-            key = "pair",
-            number = "3",
-            title = "电脑执行 adb pair / connect",
-            description = "手机点“使用配对码配对设备”，电脑执行 adb pair IP:配对端口，再执行 adb connect IP:连接端口。此步骤必须在电脑端完成。",
-            action = "复制配对模板"
-        ) {
-            copyText("Androiddesktop ADB pairing", "adb pair <手机IP:配对端口>\nadb connect <手机IP:连接端口>\nadb devices -l")
-        })
+        val pairingCard = LinearLayout(host).apply {
+            orientation = VERTICAL
+            background = Material3Tokens.surface(Material3Tokens.SurfaceContainer, dp(20), Color.argb(40, 255, 255, 255), 1)
+            setPadding(dp(14), dp(10), dp(14), dp(12))
+        }
+        val pairingHeader = LinearLayout(host).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        pairingHeader.addView(numberBadge("3"))
+        pairingHeader.addView(label("在 Androiddesktop 内配对", if (compactPhone) 12f else 14f, bold = true), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(10) })
+        val pairingStatus = statusLabel("等待配对码")
+        statusViews["pair"] = pairingStatus
+        pairingHeader.addView(pairingStatus)
+        pairingCard.addView(pairingHeader)
+        pairingCard.addView(label(
+            "在无线调试页面点“使用配对码配对设备”，保持弹窗停留。Androiddesktop 会通过 mDNS 自动找到配对端口；若 ROM 屏蔽发现，也可以手动填配对端口。",
+            if (compactPhone) 9.5f else 11f,
+            bold = false
+        ).apply { setPadding(0, dp(6), 0, dp(7)) })
 
-        steps.addView(stepCard(
-            key = "core",
-            number = "4",
-            title = "启动认证 shell core",
-            description = "Androiddesktop 首次启动会生成 256-bit 本机 token。复制核心脚本到电脑执行，看到 CORE_READY 才算完成。",
-            action = "复制核心脚本"
-        ) { copyCoreScript() })
+        pairingServiceView.apply {
+            textSize = if (compactPhone) 10f else 11.5f
+            setTextColor(Material3Tokens.Primary)
+            text = "配对服务：尚未搜索"
+            setPadding(0, 0, 0, dp(5))
+        }
+        pairingCard.addView(pairingServiceView)
+
+        val inputRow = LinearLayout(host).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        pairingCodeInput.apply {
+            hint = "6 位配对码"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setSingleLine(true)
+            setTextColor(Material3Tokens.OnSurface)
+            setHintTextColor(Material3Tokens.OnSurfaceVariant)
+            background = Material3Tokens.surface(Material3Tokens.Surface, dp(16), Material3Tokens.Outline, 1)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            contentDescription = "androiddesktop-pairing-code"
+        }
+        inputRow.addView(pairingCodeInput, LayoutParams(0, LayoutParams.WRAP_CONTENT, 0.58f))
+        pairingPortInput.apply {
+            hint = "端口(可选)"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setSingleLine(true)
+            setTextColor(Material3Tokens.OnSurface)
+            setHintTextColor(Material3Tokens.OnSurfaceVariant)
+            background = Material3Tokens.surface(Material3Tokens.Surface, dp(16), Material3Tokens.Outline, 1)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            contentDescription = "androiddesktop-pairing-port"
+        }
+        inputRow.addView(pairingPortInput, LayoutParams(0, LayoutParams.WRAP_CONTENT, 0.42f).apply { leftMargin = dp(8) })
+        pairingCard.addView(inputRow)
+
+        val pairActions = LinearLayout(host).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        discoverButton = actionButton("搜索配对服务") { discoverPairingService() }
+        pairButton = actionButton("开始配对") { pairAndBootstrap() }
+        pairActions.addView(discoverButton)
+        pairActions.addView(pairButton, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) })
+        pairingCard.addView(pairActions, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(7) })
+        steps.addView(pairingCard, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
+
+        val coreCard = LinearLayout(host).apply {
+            orientation = VERTICAL
+            background = Material3Tokens.surface(Material3Tokens.SurfaceContainer, dp(20), Color.argb(40, 255, 255, 255), 1)
+            setPadding(dp(14), dp(10), dp(14), dp(12))
+        }
+        val coreHeader = LinearLayout(host).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        coreHeader.addView(numberBadge("4"))
+        coreHeader.addView(label("启动 shell 核心", if (compactPhone) 12f else 14f, bold = true), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(10) })
+        val coreStatus = statusLabel("等待 ADB")
+        statusViews["core"] = coreStatus
+        coreHeader.addView(coreStatus)
+        coreCard.addView(coreHeader)
+        coreCard.addView(label(
+            "配对成功后，Androiddesktop 会通过本机 ADB 给宿主必要的调试权限并启动认证 shell core。token 仅保存在本机，不显示、不复制。",
+            if (compactPhone) 9.5f else 11f,
+            bold = false
+        ).apply { setPadding(0, dp(6), 0, dp(7)) })
+        bootstrapButton = actionButton("连接并启动核心") { bootstrapCore() }
+        coreCard.addView(bootstrapButton, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+        steps.addView(coreCard, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
 
         steps.addView(stepCard(
             key = "session",
             number = "5",
-            title = "创建窗口并验证",
-            description = "回到桌面，从启动台打开番茄小说/华为阅读等真实应用。只有 VirtualDisplay 有真实 Activity task 且截图出现 App 内容才算通过。",
-            action = "复制验证命令"
+            title = "进入桌面并打开真实应用",
+            description = "核心就绪后，启动台读取系统真实可启动应用；点击应用创建 VirtualDisplay 会话，并把该应用启动到对应显示。",
+            action = "复制诊断命令"
         ) { copyVerificationScript() })
 
-                val commandContainer = LinearLayout(host).apply {
-            orientation = VERTICAL
-            background = Material3Tokens.surface(Material3Tokens.Surface, dp(20), Material3Tokens.Outline, 1)
-            setPadding(
-                dp(if (compactPhone) 10 else 14),
-                dp(if (compactPhone) 8 else 12),
-                dp(if (compactPhone) 10 else 14),
-                dp(if (compactPhone) 8 else 12)
-            )
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            pairingCodeInput.isEnabled = false
+            pairingPortInput.isEnabled = false
+            pairButton.isEnabled = false
+            discoverButton.isEnabled = false
         }
-        commandContainer.addView(label("当前完整命令", if (compactPhone) 12f else 14f, bold = true))
-        commandView.apply {
-            textSize = if (compactPhone) 9.5f else 11f
-
-            setTextColor(Material3Tokens.OnSurface)
-            setTextIsSelectable(true)
-            setLineSpacing(0f, 1.15f)
-        }
-        val commandScroll = ScrollView(host).apply { addView(commandView) }
-        commandContainer.addView(commandScroll, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f).apply { topMargin = dp(8) })
-        contentRow.addView(commandContainer, LayoutParams(0, LayoutParams.MATCH_PARENT, 0.55f))
 
         refreshStatus()
+    }
+
+    fun setRequiredSetup(required: Boolean) {
+        requiredSetup = required && !setupComplete
+        updateCloseState()
     }
 
     fun refreshStatus() {
         val development = readGlobalInt(Settings.Global.DEVELOPMENT_SETTINGS_ENABLED) == 1
         val wireless = readGlobalInt("adb_wifi_enabled") == 1
-        val tokenPresent = runCatching { CoreAuthTokenStore(host).tokenFile().isFile }.getOrDefault(false)
-
         setStatus("developer", if (development) "已开启" else "待开启", development)
-        setStatus("wireless", if (wireless) "已开启" else "未检测到 / 请人工确认", wireless)
-        setStatus("pair", "需电脑端确认", null)
-        setStatus("core", if (tokenPresent) "token 已就绪 · 检测 core…" else "等待首次启动生成 token", tokenPresent.takeIf { !it })
+        setStatus("wireless", if (wireless) "已开启" else "未检测到", wireless)
         setStatus("session", sessionSummaryProvider(), null)
-        summaryView.text = "设备侧状态会自动检测；配对端口/连接端口由 Android 无线调试页面动态生成。${if (AppMotion.reducedMotion(host)) " 已启用 reduced-motion。" else " 动画遵循 120/200/220/240ms motion token。"}"
-        commandView.text = fullGuide()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            setStatus("pair", "需要 Android 11+", false)
+            setStatus("core", "当前系统不支持内置 TLS 配对", false)
+            summaryView.text = "当前 Android ${Build.VERSION.RELEASE}。内置无线 ADB 配对要求 Android 11 或更高版本。"
+            return
+        }
+
+        summaryView.text = if (requiredSetup) {
+            "首次启动需要先完成无线调试配对与核心启动；完成后才进入桌面。"
+        } else {
+            "可在这里重新配对、恢复无线 ADB 连接或重启 shell core。"
+        }
 
         CoreIoDispatcher.execute {
+            val connected = bridge.connect(2_500L)
             val ping = runCatching { PrivilegedCoreClient(host).ping() }.getOrNull()
             post {
                 if (ping?.success == true) {
+                    setStatus("pair", "已连接", true)
                     setStatus("core", "CORE_READY · 已认证", true)
+                    completeSetupIfNeeded()
                 } else {
-                    setStatus("core", if (tokenPresent) "token 已就绪 · core 未连接" else "core 未连接", false)
+                    setStatus("pair", if (connected) "ADB 已连接" else "等待配对", connected.takeIf { it })
+                    setStatus("core", if (connected) "ADB 已连接 · core 未运行" else "等待 ADB", false)
                 }
             }
         }
+    }
+
+    private fun discoverPairingService() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        discoverButton.isEnabled = false
+        pairingServiceView.text = "配对服务：正在搜索… 请保持系统配对弹窗打开"
+        setStatus("pair", "搜索中", null)
+        CoreIoDispatcher.execute {
+            val endpoint = bridge.discoverPairingEndpoint(15_000L)
+            post {
+                discoverButton.isEnabled = true
+                discoveredEndpoint = endpoint
+                if (endpoint != null) {
+                    pairingServiceView.text = "配对服务：${endpoint.host}:${endpoint.port}"
+                    pairingPortInput.setText(endpoint.port.toString())
+                    setStatus("pair", "已发现", true)
+                } else {
+                    pairingServiceView.text = "配对服务：未发现。请重新打开“使用配对码配对设备”，或手动填写配对端口。"
+                    setStatus("pair", "未发现", false)
+                }
+            }
+        }
+    }
+
+    private fun pairAndBootstrap() {
+        val code = pairingCodeInput.text.toString().trim()
+        val portText = pairingPortInput.text.toString().trim()
+        val port = portText.takeIf { it.isNotEmpty() }?.toIntOrNull()
+        if (!Regex("\\d{6}").matches(code)) {
+            pairingCodeInput.error = "请输入 6 位配对码"
+            return
+        }
+        if (portText.isNotEmpty() && (port == null || port !in 1..65535)) {
+            pairingPortInput.error = "端口无效"
+            return
+        }
+        pairButton.isEnabled = false
+        discoverButton.isEnabled = false
+        bootstrapButton.isEnabled = false
+        setStatus("pair", "正在配对", null)
+        onMessage("Androiddesktop 正在使用本机无线调试 TLS 配对服务完成配对。")
+        CoreIoDispatcher.execute {
+            val result = bridge.pair(code, port)
+            if (!result.paired) {
+                post {
+                    pairButton.isEnabled = true
+                    discoverButton.isEnabled = true
+                    bootstrapButton.isEnabled = true
+                    setStatus("pair", "配对失败", false)
+                    pairingServiceView.text = "配对服务：${result.message}"
+                    onMessage(result.message)
+                }
+                return@execute
+            }
+            val endpoint = result.endpoint
+            discoveredEndpoint = endpoint
+            val token = runCatching { CoreAuthTokenStore(host).ensureToken() }.getOrNull()
+            val bootstrap = if (token != null) bridge.bootstrapCore(hostPackage, token) else null
+            post {
+                pairingCodeInput.text?.clear()
+                pairButton.isEnabled = true
+                discoverButton.isEnabled = true
+                bootstrapButton.isEnabled = true
+                setStatus("pair", if (result.connected || bootstrap?.connected == true) "配对并连接成功" else "配对成功", true)
+                pairingServiceView.text = buildString {
+                    append("配对服务：")
+                    append(endpoint?.let { "${it.host}:${it.port}" } ?: "已配对")
+                    append(" · ")
+                    append(result.message)
+                }
+                if (bootstrap?.coreStarted == true) {
+                    setStatus("core", "CORE_READY · 已认证", true)
+                    onMessage(bootstrap.message)
+                    completeSetupIfNeeded()
+                } else {
+                    setStatus("core", if (bootstrap?.connected == true) "ADB 已连接 · core 启动失败" else "等待连接", false)
+                    onMessage(bootstrap?.message ?: result.message)
+                }
+            }
+        }
+    }
+
+    private fun bootstrapCore() {
+        bootstrapButton.isEnabled = false
+        setStatus("core", "连接并启动中", null)
+        CoreIoDispatcher.execute {
+            val token = runCatching { CoreAuthTokenStore(host).ensureToken() }.getOrNull()
+            val result = if (token != null) bridge.bootstrapCore(hostPackage, token) else null
+            post {
+                bootstrapButton.isEnabled = true
+                if (result?.coreStarted == true) {
+                    setStatus("pair", "ADB 已连接", true)
+                    setStatus("core", "CORE_READY · 已认证", true)
+                    onMessage(result.message)
+                    completeSetupIfNeeded()
+                } else {
+                    setStatus("core", "启动失败", false)
+                    onMessage(result?.message ?: "无法创建本机 core token")
+                }
+            }
+        }
+    }
+
+    private fun completeSetupIfNeeded() {
+        if (setupComplete) return
+        setupComplete = true
+        requiredSetup = false
+        updateCloseState()
+        onSetupComplete()
+        Toast.makeText(host, "无线调试已就绪，可以进入桌面", Toast.LENGTH_SHORT).show()
+        postDelayed({ onClose() }, 450L)
+    }
+
+    private fun updateCloseState() {
+        closeButton.isEnabled = !requiredSetup || setupComplete
+        closeButton.alpha = if (closeButton.isEnabled) 1f else 0.42f
+        closeButton.text = if (requiredSetup && !setupComplete) "完成配对后进入桌面" else "关闭"
     }
 
     private fun stepCard(
@@ -202,38 +414,37 @@ class WirelessDebugGuidePanel(
         action: String,
         onAction: () -> Unit
     ): View {
-                val card = LinearLayout(host).apply {
+        val card = LinearLayout(host).apply {
             orientation = VERTICAL
-            background = Material3Tokens.surface(Material3Tokens.SurfaceContainer, dp(18), Color.argb(40, 255, 255, 255), 1)
-            setPadding(
-                dp(if (compactPhone) 10 else 12),
-                dp(if (compactPhone) 7 else 10),
-                dp(if (compactPhone) 10 else 12),
-                dp(if (compactPhone) 7 else 10)
-            )
+            background = Material3Tokens.surface(Material3Tokens.SurfaceContainer, dp(20), Color.argb(40, 255, 255, 255), 1)
+            setPadding(dp(14), dp(10), dp(14), dp(12))
         }
         val top = LinearLayout(host).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        top.addView(label(number, if (compactPhone) 11f else 13f, bold = true).apply {
-            gravity = Gravity.CENTER
-            background = Material3Tokens.surface(Material3Tokens.PrimaryContainer, dp(14))
-        }, LayoutParams(dp(if (compactPhone) 26 else 30), dp(if (compactPhone) 26 else 30)))
-        top.addView(label(title, if (compactPhone) 12f else 14f, bold = true), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(if (compactPhone) 7 else 10) })
-        val status = label("检测中", if (compactPhone) 9f else 10f, bold = true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(if (compactPhone) 6 else 8), dp(if (compactPhone) 3 else 4), dp(if (compactPhone) 6 else 8), dp(if (compactPhone) 3 else 4))
-        }
-
+        top.addView(numberBadge(number))
+        top.addView(label(title, if (compactPhone) 12f else 14f, bold = true), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(10) })
+        val status = statusLabel("检测中")
         statusViews[key] = status
         top.addView(status)
-                card.addView(top)
+        card.addView(top)
         card.addView(label(description, if (compactPhone) 9.5f else 11f, bold = false).apply {
-            setPadding(0, dp(if (compactPhone) 4 else 6), 0, dp(if (compactPhone) 5 else 7))
+            setPadding(0, dp(6), 0, dp(7))
         })
         card.addView(actionButton(action, onAction), LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         return card.apply {
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(if (compactPhone) 6 else 8) }
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) }
         }
+    }
 
+    private fun numberBadge(number: String): TextView = label(number, if (compactPhone) 11f else 13f, bold = true).apply {
+        gravity = Gravity.CENTER
+        background = Material3Tokens.surface(Material3Tokens.PrimaryContainer, dp(14))
+        layoutParams = LayoutParams(dp(if (compactPhone) 28 else 32), dp(if (compactPhone) 28 else 32))
+    }
+
+    private fun statusLabel(value: String): TextView = label(value, if (compactPhone) 9f else 10f, bold = true).apply {
+        gravity = Gravity.CENTER
+        setPadding(dp(8), dp(4), dp(8), dp(4))
+        background = Material3Tokens.surface(Material3Tokens.SecondaryContainer, dp(13))
     }
 
     private fun setStatus(key: String, value: String, success: Boolean?) {
@@ -249,18 +460,19 @@ class WirelessDebugGuidePanel(
         }
     }
 
-            private fun actionButton(textValue: String, onClick: () -> Unit): Button = Button(host).apply {
+    private fun actionButton(textValue: String, onClick: () -> Unit): Button = Button(host).apply {
         text = textValue
         textSize = if (compactPhone) 10f else 11f
         isAllCaps = false
         contentDescription = when (textValue) {
-            "关闭" -> "androiddesktop-guide-close"
+            "关闭", "完成配对后进入桌面" -> "androiddesktop-guide-close"
             "重新检测" -> "androiddesktop-guide-refresh"
-            "复制全部" -> "androiddesktop-guide-copy-all"
+            "搜索配对服务" -> "androiddesktop-guide-discover"
+            "开始配对" -> "androiddesktop-guide-pair"
+            "连接并启动核心" -> "androiddesktop-guide-bootstrap"
             else -> "androiddesktop-guide-action"
         }
         setTextColor(Material3Tokens.OnSurface)
-
         background = Material3Tokens.ripple(Material3Tokens.PrimaryContainer, dp(16))
         AppMotion.installPressFeedback(this)
         setOnClickListener { onClick() }
@@ -279,39 +491,19 @@ class WirelessDebugGuidePanel(
         if (!launched) {
             runCatching { host.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         }
-        onMessage("已请求打开系统设置：$action。返回 Androiddesktop 后点击“重新检测”。")
-    }
-
-    private fun copyCoreScript() {
-        val text = fullGuide().lineSequence()
-            .dropWhile { !it.contains("阶段 3") }
-            .takeWhile { !it.contains("阶段 4") }
-            .joinToString("\n")
-        copyText("Androiddesktop privileged core", text)
+        onMessage("已打开系统设置。启用对应开关后返回 Androiddesktop；配对时请保持系统“使用配对码配对设备”弹窗打开。")
     }
 
     private fun copyVerificationScript() {
-        val target = targetPackageProvider().ifBlank { "com.dragon.read" }
+        val target = targetPackageProvider().ifBlank { "com.android.settings" }
         val text = buildString {
+            appendLine("# 仅用于外部诊断，不是内置配对的必需步骤")
             appendLine("adb shell dumpsys display | grep -iE \"Androiddesktop|mDisplayId|$target\"")
             appendLine("adb shell dumpsys activity activities | grep -iE \"Display: mDisplayId|$target|$hostPackage\"")
-            appendLine("adb shell screencap -d <displayId> -p /sdcard/androiddesktop-target.png")
-            appendLine("adb pull /sdcard/androiddesktop-target.png")
         }
-        copyText("Androiddesktop verification", text)
-    }
-
-    private fun copyAllGuide() = copyText("Androiddesktop wireless debugging guide", fullGuide())
-
-    private fun copyText(label: String, value: String) {
         val clipboard = host.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
-        Toast.makeText(host, "已复制：$label", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun fullGuide(): String {
-        val target = targetPackageProvider().ifBlank { "com.dragon.read" }
-        return WirelessDebugGuide.guide(hostPackage, target, Rect(dp(80), dp(80), dp(920), dp(720)))
+        clipboard.setPrimaryClip(ClipData.newPlainText("Androiddesktop verification", text))
+        Toast.makeText(host, "诊断命令已复制", Toast.LENGTH_SHORT).show()
     }
 
     private fun readGlobalInt(name: String): Int? = runCatching {

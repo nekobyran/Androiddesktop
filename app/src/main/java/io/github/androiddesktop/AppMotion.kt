@@ -133,6 +133,63 @@ object AppMotion {
         start(view, set)
     }
 
+    fun showLaunchpad(view: View) {
+        cancel(view)
+        if (reducedMotion(view.context)) {
+            view.visibility = View.VISIBLE
+            view.alpha = 1f
+            view.scaleX = 1f
+            view.scaleY = 1f
+            view.translationY = 0f
+            return
+        }
+        view.visibility = View.VISIBLE
+        view.pivotX = view.width / 2f
+        view.pivotY = view.height / 2f
+        view.alpha = 0f
+        view.scaleX = 0.92f
+        view.scaleY = 0.92f
+        view.translationY = dp(view, 14).toFloat()
+        val set = AnimatorSet().apply {
+            playTogether(
+                ObjectAnimator.ofFloat(view, View.ALPHA, 0f, 1f),
+                ObjectAnimator.ofFloat(view, View.SCALE_X, 0.92f, 1f),
+                ObjectAnimator.ofFloat(view, View.SCALE_Y, 0.92f, 1f),
+                ObjectAnimator.ofFloat(view, View.TRANSLATION_Y, view.translationY, 0f)
+            )
+            duration = 260L
+            interpolator = MotionTokens.EaseOut
+        }
+        start(view, set)
+    }
+
+    fun hideLaunchpad(view: View, onHidden: () -> Unit) {
+        cancel(view)
+        if (reducedMotion(view.context)) {
+            view.alpha = 0f
+            view.visibility = View.GONE
+            onHidden()
+            return
+        }
+        val set = AnimatorSet().apply {
+            playTogether(
+                ObjectAnimator.ofFloat(view, View.ALPHA, view.alpha, 0f),
+                ObjectAnimator.ofFloat(view, View.SCALE_X, view.scaleX, 0.95f),
+                ObjectAnimator.ofFloat(view, View.SCALE_Y, view.scaleY, 0.95f),
+                ObjectAnimator.ofFloat(view, View.TRANSLATION_Y, view.translationY, dp(view, 10).toFloat())
+            )
+            duration = 190L
+            interpolator = MotionTokens.EaseOut
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    view.visibility = View.GONE
+                    onHidden()
+                }
+            })
+        }
+        start(view, set)
+    }
+
     fun showModal(view: View) {
         cancel(view)
         if (reducedMotion(view.context)) {
